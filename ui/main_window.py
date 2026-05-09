@@ -1,12 +1,14 @@
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton,
-                             QSpinBox, QLabel, QColorDialog, QCheckBox)
+                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox)
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 
 from canvas.view import CanvasView
 from tools.select_tool import SelectTool
 from tools.iso_tool import DrawIsoBlockTool
+from tools.iso_line_tool import DrawIsoLineTool
 from items.iso_block import IsoBlockItem
+from items.iso_line import IsoLineItem
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,8 +30,12 @@ class MainWindow(QMainWindow):
         btn_draw_iso = QPushButton("3Dブロック配置ツール")
         btn_draw_iso.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoBlockTool(self.canvas, self.get_block_props)))
 
+        btn_draw_line = QPushButton("線・矢印ツール")
+        btn_draw_line.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoLineTool(self.canvas, self.get_line_props)))
+
         panel_layout.addWidget(btn_select)
         panel_layout.addWidget(btn_draw_iso)
+        panel_layout.addWidget(btn_draw_line)
         
         self.cb_snap = QCheckBox("グリッドにスナップ")
         self.cb_snap.setChecked(True)
@@ -57,6 +63,23 @@ class MainWindow(QMainWindow):
         self.spin_h = create_spinbox("高さ (H):", 1, 500, 30, step=1)
         self.spin_opacity = create_spinbox("透過率 (%):", 10, 100, 100)
         
+        panel_layout.addWidget(QLabel("<b>【線・矢印プロパティ】</b>"))
+        self.spin_thickness = create_spinbox("線の太さ:", 1, 100, 10, step=1)
+
+        h_layout_arrow = QHBoxLayout()
+        h_layout_arrow.addWidget(QLabel("矢印の形:"))
+        self.combo_arrow_type = QComboBox()
+        self.combo_arrow_type.addItem("なし", "none")
+        self.combo_arrow_type.addItem("フラット", "flat")
+        self.combo_arrow_type.addItem("立体", "cylinder")
+        self.combo_arrow_type.currentIndexChanged.connect(self.update_selected_item)
+        h_layout_arrow.addWidget(self.combo_arrow_type)
+        panel_layout.addLayout(h_layout_arrow)
+
+        self.spin_rot_x = create_spinbox("回転 X:", 0, 360, 0, step=5)
+        self.spin_rot_y = create_spinbox("回転 Y:", 0, 360, 0, step=5)
+        self.spin_rot_z = create_spinbox("回転 Z:", 0, 360, 0, step=5)
+
         self.current_color = QColor(150, 170, 220)
         self.btn_color = QPushButton("色を選択")
         self.update_color_btn_style()
@@ -95,6 +118,7 @@ class MainWindow(QMainWindow):
 
     def toggle_snap(self, state):
         IsoBlockItem.SNAP_ENABLED = (state == 2)
+        IsoLineItem.SNAP_ENABLED = (state == 2)
 
     def sync_ui_to_selection(self):
         selected = self.canvas.scene.selectedItems()
@@ -110,6 +134,23 @@ class MainWindow(QMainWindow):
             # 配列内のインデックスを表示
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoLineItem):
+            item = selected[0]
+            self.spin_thickness.blockSignals(True); self.spin_thickness.setValue(int(item.thickness)); self.spin_thickness.blockSignals(False)
+            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+            self.spin_rot_x.blockSignals(True); self.spin_rot_x.setValue(int(item.rot_x) % 360); self.spin_rot_x.blockSignals(False)
+            self.spin_rot_y.blockSignals(True); self.spin_rot_y.setValue(int(item.rot_y) % 360); self.spin_rot_y.blockSignals(False)
+            self.spin_rot_z.blockSignals(True); self.spin_rot_z.setValue(int(item.rot_z) % 360); self.spin_rot_z.blockSignals(False)
+
+            idx = self.combo_arrow_type.findData(item.arrow_type)
+            if idx >= 0:
+                self.combo_arrow_type.blockSignals(True); self.combo_arrow_type.setCurrentIndex(idx); self.combo_arrow_type.blockSignals(False)
+
+            self.current_color = item.base_color
+            self.update_color_btn_style()
+
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         else:
             self.label_z_index.setText("現在のレイヤー: -")
 
@@ -120,6 +161,15 @@ class MainWindow(QMainWindow):
             item.update_geometry(w=self.spin_w.value(), d=self.spin_d.value(), 
                                  h=self.spin_h.value(), base_color=self.current_color,
                                  opacity=self.spin_opacity.value())
+        elif selected and isinstance(selected[0], IsoLineItem):
+            item = selected[0]
+            item.update_geometry(thickness=self.spin_thickness.value(),
+                                 arrow_type=self.combo_arrow_type.currentData(),
+                                 base_color=self.current_color,
+                                 opacity=self.spin_opacity.value(),
+                                 rot_x=self.spin_rot_x.value(),
+                                 rot_y=self.spin_rot_y.value(),
+                                 rot_z=self.spin_rot_z.value())
 
     def choose_color(self):
         color = QColorDialog.getColor(self.current_color, self)
@@ -134,21 +184,24 @@ class MainWindow(QMainWindow):
     def get_block_props(self):
         return self.spin_w.value(), self.spin_d.value(), self.spin_h.value(), self.current_color, self.spin_opacity.value()
 
+    def get_line_props(self):
+        return self.spin_thickness.value(), self.combo_arrow_type.currentData(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
+
     def delete_selected(self):
         for item in self.canvas.scene.selectedItems():
-            self.canvas.remove_block(item) # 配列からも削除
+            self.canvas.remove_block(item)
 
     def change_z_index(self, direction):
         selected = self.canvas.scene.selectedItems()
-        if selected and isinstance(selected[0], IsoBlockItem):
+        if selected:
             item = selected[0]
             if direction == "front":
                 self.canvas.move_front(item)
             elif direction == "back":
                 self.canvas.move_back(item)
             
-            # 移動後のインデックスを更新
-            self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
