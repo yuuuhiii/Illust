@@ -44,8 +44,8 @@ def generate_cylinder(radius, length, segments=12, offset_x=0):
         y1, z1 = math.cos(a1) * radius, math.sin(a1) * radius
         y2, z2 = math.cos(a2) * radius, math.sin(a2) * radius
         faces.append([(x1, y1, z1), (x1, y2, z2), (x2, y2, z2), (x2, y1, z1)])
-    faces.append([(x1, math.cos(i * 2 * math.pi / segments) * radius, math.sin(i * 2 * math.pi / segments) * radius) for i in range(segments)][::-1])
-    faces.append([(x2, math.cos(i * 2 * math.pi / segments) * radius, math.sin(i * 2 * math.pi / segments) * radius) for i in range(segments)])
+    faces.append([(x1, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)][::-1])
+    faces.append([(x2, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)])
     return faces
 
 def generate_cone(radius, length, segments=12, offset_x=0):
@@ -57,7 +57,7 @@ def generate_cone(radius, length, segments=12, offset_x=0):
         y1, z1 = math.cos(a1) * radius, math.sin(a1) * radius
         y2, z2 = math.cos(a2) * radius, math.sin(a2) * radius
         faces.append([(x1, y1, z1), (x1, y2, z2), (x2, 0, 0)])
-    faces.append([(x1, math.cos(i * 2 * math.pi / segments) * radius, math.sin(i * 2 * math.pi / segments) * radius) for i in range(segments)][::-1])
+    faces.append([(x1, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)][::-1])
     return faces
 
 def generate_box(length, width, height, offset_x=0):
