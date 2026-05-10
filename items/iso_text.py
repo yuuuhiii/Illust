@@ -78,11 +78,11 @@ class IsoTextItem(QGraphicsItemGroup):
             # m11=c, m12=s, m21=0, m22=1
             iso_transform = QTransform(c, s, 0, 1, 0, 0)
         elif self.plane == "YZ": # Left Wall
-            # px -> Y, py -> -Z
-            # sx = -Y*c = -px*c
-            # sy = Y*s - Z = px*s - (-py) = px*s + py
-            # m11=-c, m12=s, m21=0, m22=1
-            iso_transform = QTransform(-c, s, 0, 1, 0, 0)
+            # px -> -Y, py -> -Z
+            # sx = -(-Y)*c = px*c
+            # sy = -Y*s - Z = -px*s - (-py) = -px*s + py
+            # m11=c, m12=-s, m21=0, m22=1
+            iso_transform = QTransform(c, -s, 0, 1, 0, 0)
 
         mapped_path = iso_transform.map(centered_path)
         self.path_item.setPath(mapped_path)
