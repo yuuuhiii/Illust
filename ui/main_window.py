@@ -26,7 +26,6 @@ class MainWindow(QMainWindow):
         self.canvas.scene.selectionChanged.connect(self.sync_ui_to_selection)
 
         panel_layout = QVBoxLayout()
-        panel_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         panel_layout.addWidget(QLabel("<b>【ツール】</b>"))
         btn_select = QPushButton("選択・移動ツール")
@@ -196,9 +195,11 @@ class MainWindow(QMainWindow):
         btn_delete.clicked.connect(self.delete_selected)
         panel_layout.addWidget(btn_delete)
 
+        panel_layout.addStretch()
+
         panel_widget = QWidget()
         panel_widget.setLayout(panel_layout)
-        panel_widget.setFixedWidth(250) 
+        panel_widget.setFixedWidth(280)
         main_layout.addWidget(self.canvas)
         main_layout.addWidget(panel_widget)
         
