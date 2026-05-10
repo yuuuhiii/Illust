@@ -141,6 +141,8 @@ class IsoLineItem(QGraphicsItemGroup):
         return faces
 
     def update_geometry(self, length=None, thickness=None, arrow_type=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
+        self.prepareGeometryChange()
+
         if length is not None: self.length = max(1, length)
         if thickness is not None: self.thickness = max(1, thickness)
         if arrow_type is not None: self.arrow_type = arrow_type
@@ -185,6 +187,9 @@ class IsoLineItem(QGraphicsItemGroup):
             self.addToGroup(item)
             self.poly_items.append(item)
 
+        sel_pen = QPen(Qt.GlobalColor.blue, 1.5, Qt.PenStyle.DashLine)
+        norm_pen = QPen(Qt.GlobalColor.black, 1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+
         for i in range(len(self.poly_items)):
             if i < len(visible_faces):
                 vf = visible_faces[i]
@@ -194,7 +199,7 @@ class IsoLineItem(QGraphicsItemGroup):
                 g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
                 b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
                 item.setBrush(QBrush(QColor(r, g, b)))
-                item.setPen(QPen(Qt.GlobalColor.black, 1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+                item.setPen(sel_pen if self.isSelected() else norm_pen)
                 item.show()
             else:
                 # Use empty polygon instead of hide() so parent doesn't lose selection
@@ -202,16 +207,10 @@ class IsoLineItem(QGraphicsItemGroup):
                 self.poly_items[i].setPen(QPen(Qt.PenStyle.NoPen))
 
     def boundingRect(self):
-        return self.childrenBoundingRect().adjusted(-3, -3, 3, 3)
+        return self.childrenBoundingRect()
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
-        if self.isSelected():
-            pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            # Expand the bounding rect slightly so it doesn't overlap perfectly with edges
-            painter.drawRect(self.boundingRect().adjusted(-2, -2, 2, 2))
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
@@ -220,6 +219,6 @@ class IsoLineItem(QGraphicsItemGroup):
                 x = round(new_pos.x() / self.GRID_SIZE) * self.GRID_SIZE
                 y = round(new_pos.y() / self.GRID_SIZE) * self.GRID_SIZE
                 return QPointF(x, y)
-        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
-            self.update()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.update_geometry()
         return super().itemChange(change, value)
