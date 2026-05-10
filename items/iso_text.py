@@ -1,8 +1,8 @@
 import math
-from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
-from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF, QFont, QPainterPath
+from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPathItem, QGraphicsItem
+from PyQt6.QtGui import QColor, QPen, QBrush, QFont, QPainterPath, QTransform
 from PyQt6.QtCore import Qt, QPointF
-from items.math3d import rotate_3d, project_iso, compute_normal
+from items.math3d import project_iso
 
 class IsoTextItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
@@ -20,7 +20,9 @@ class IsoTextItem(QGraphicsItemGroup):
         self.base_color = base_color
         self.opacity_val = opacity
 
-        self.poly_items = []
+        self.path_item = QGraphicsPathItem()
+        self.path_item.setParentItem(self)
+
         self.update_geometry()
 
     def update_geometry(self, text=None, font_size=None, plane=None, base_color=None, opacity=None):
@@ -34,68 +36,71 @@ class IsoTextItem(QGraphicsItemGroup):
 
         self.setOpacity(self.opacity_val / 100.0)
 
-        for p in self.poly_items:
-            p.setParentItem(None)
-            if self.scene():
-                self.scene().removeItem(p)
-        self.poly_items.clear()
-
         if not self.text:
+            self.path_item.setPath(QPainterPath())
             return
 
         font = QFont("Arial", self.font_size)
         font.setStyleStrategy(QFont.StyleStrategy.ForceOutline)
 
         path = QPainterPath()
-        # Add text to path. (0,0) is baseline start.
         path.addText(0, 0, font, self.text)
 
-        # We can extract polygons from the painter path
-        polygons = path.toSubpathPolygons()
-
-        # We need to map these 2D polygons into our 3D space depending on the plane
-        # In our QPainterPath: X goes right, Y goes down (but text baseline is at 0, so text is mainly negative Y).
-        # We will center the text roughly.
         br = path.boundingRect()
         cx = br.center().x()
         cy = br.center().y()
 
-        sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine) if self.isSelected() else QPen(Qt.PenStyle.NoPen)
+        # Center the path
+        center_transform = QTransform().translate(-cx, -cy)
+        centered_path = center_transform.map(path)
 
-        for poly2d in polygons:
-            mapped_poly = QPolygonF()
-            for i in range(poly2d.count()):
-                pt = poly2d.at(i)
-                px = pt.x() - cx
-                py = pt.y() - cy
+        angle = math.radians(30)
+        c, s = math.cos(angle), math.sin(angle)
 
-                # Default 3D coordinates
-                x, y, z = 0, 0, 0
+        iso_transform = QTransform()
 
-                if self.plane == "Screen":
-                    # Just flat on screen, no 3D projection
-                    mapped_poly.append(QPointF(px, py))
-                    continue
-                elif self.plane == "XY": # Floor plane
-                    # X axis maps to px, Y axis maps to py
-                    x, y, z = px, py, 0
-                elif self.plane == "YZ": # Right wall
-                    # Y axis maps to px, Z axis maps to py
-                    x, y, z = 0, px, py
-                elif self.plane == "XZ": # Left wall
-                    # X axis maps to px, Z axis maps to py
-                    x, y, z = px, 0, py
+        if self.plane == "Screen":
+            # No projection
+            iso_transform = QTransform()
+        elif self.plane == "XY": # Floor
+            # px -> X, py -> Y
+            # sx = (X - Y)*c = px*c - py*c
+            # sy = (X + Y)*s - Z = px*s + py*s
+            # QTransform(m11, m12, m21, m22, dx, dy)
+            # x' = m11*x + m21*y + dx
+            # y' = m12*x + m22*y + dy
+            # Therefore: m11=c, m12=s, m21=-c, m22=s
+            iso_transform = QTransform(c, s, -c, s, 0, 0)
+        elif self.plane == "XZ": # Right Wall
+            # px -> X, py -> -Z
+            # sx = X*c = px*c
+            # sy = X*s - Z = px*s - (-py) = px*s + py
+            # m11=c, m12=s, m21=0, m22=1
+            iso_transform = QTransform(c, s, 0, 1, 0, 0)
+        elif self.plane == "YZ": # Left Wall
+            # px -> Y, py -> -Z
+            # sx = -Y*c = -px*c
+            # sy = Y*s - Z = px*s - (-py) = px*s + py
+            # m11=-c, m12=s, m21=0, m22=1
+            iso_transform = QTransform(-c, s, 0, 1, 0, 0)
 
-                # Apply isometric projection
-                sx, sy = project_iso(x, y, z)
-                mapped_poly.append(QPointF(sx, sy))
+        mapped_path = iso_transform.map(centered_path)
+        self.path_item.setPath(mapped_path)
 
-            item = QGraphicsPolygonItem()
-            item.setPolygon(mapped_poly)
-            item.setBrush(QBrush(self.base_color))
-            item.setPen(sel_pen)
-            item.setParentItem(self)
-            self.poly_items.append(item)
+        # Draw with brush and pen to fix the fill and visibility issues
+        self.path_item.setBrush(QBrush(self.base_color))
+
+        # Add an outline so text is clear. Same color as base or slightly darker,
+        # but let's use the base color for the fill and a thin solid outline.
+        pen = QPen(self.base_color, 1.0)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        self.path_item.setPen(pen)
+
+        if self.isSelected():
+            sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+            # We can draw the selection outline over it, or just change the pen.
+            # Usually we add a bounding box for selection, but changing pen is fine.
+            self.path_item.setPen(sel_pen)
 
     def boundingRect(self):
         return self.childrenBoundingRect()
