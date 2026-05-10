@@ -22,82 +22,35 @@ class DrawIsoLineTool(BaseTool):
             scene_pos = QPointF(x, y)
 
         if self.start_pos is None:
-            # First click
             self.start_pos = scene_pos
             thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
             self.preview_item = IsoLineItem(length=1, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
             self.view.scene.addItem(self.preview_item)
             self.preview_item.setPos(scene_pos)
         else:
-            # Second click
-            final_pos = self._get_snapped_pos(self.start_pos, scene_pos)
-            dx = final_pos.x() - self.start_pos.x()
-            dy = final_pos.y() - self.start_pos.y()
-
-            # Iso axes vectors (2D representation)
-            # x_axis: (cos 30, sin 30)
-            # y_axis: (-cos 30, sin 30)
-            # z_axis: (0, -1)
-
-            angle = math.radians(30)
-            c, s = math.cos(angle), math.sin(angle)
-
-            # Determine 3D length and rotation based on the snapped vector
-            length_2d = math.hypot(dx, dy)
-            length_3d = 0
-            rot_z = 0
-
-            if length_2d > 0.1:
-                dir_x = dx / length_2d
-                dir_y = dy / length_2d
-
-                dot_x = dir_x * c + dir_y * s
-                dot_y = dir_x * (-c) + dir_y * s
-                dot_z = dir_x * 0 + dir_y * (-1)
-
-                max_dot = max(abs(dot_x), abs(dot_y), abs(dot_z))
-
-                if max_dot == abs(dot_x): # aligned to X axis
-                    length_3d = length_2d / c
-                    rot_z = 0 if dot_x > 0 else 180
-                elif max_dot == abs(dot_y): # aligned to Y axis
-                    length_3d = length_2d / c
-                    rot_z = -90 if dot_y > 0 else 90
-                else: # aligned to Z axis
-                    length_3d = length_2d
-                    # Actually drawing along Z axis requires rotating the object around Y axis
-                    # Our default cylinder is along X axis.
-                    # Rotating 90 deg around Y points it to Z
-                    rot_y = -90 if dot_z > 0 else 90
-
-            thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
-
-            if self.preview_item:
-                self.view.scene.removeItem(self.preview_item)
-                self.preview_item = None
-
-            center_x = (self.start_pos.x() + final_pos.x()) / 2
-            center_y = (self.start_pos.y() + final_pos.y()) / 2
-
-            if length_3d > 0.1:
-                block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
-
-                if max_dot == abs(dot_z):
-                    block.update_geometry(rot_y=-90 if dot_z > 0 else 90)
-                else:
-                    block.update_geometry(rot_z=rot_z)
-
-                self.view.add_block(block, QPointF(center_x, center_y))
-                self.scene.clearSelection()
-                block.setSelected(True)
-
-            self.start_pos = None
+            # Handle the 2nd click of the "click-move-click" mode
+            self.finalize_line(scene_pos)
 
     def mouseMoveEvent(self, event):
         if self.start_pos is None or self.preview_item is None:
             return
 
         scene_pos = self.view.mapToScene(event.pos())
+        dx = scene_pos.x() - self.start_pos.x()
+        dy = scene_pos.y() - self.start_pos.y()
+
+        # If the user just clicked without dragging, leave the preview running
+        # so they can complete it with a second click (click-move-click mode)
+        if math.hypot(dx, dy) < 5:
+            return
+
+        # If they dragged a significant distance, finalize the line
+        self.finalize_line(scene_pos)
+
+    def finalize_line(self, scene_pos):
+        if self.start_pos is None or self.preview_item is None:
+            return
+
         final_pos = self._get_snapped_pos(self.start_pos, scene_pos)
 
         dx = final_pos.x() - self.start_pos.x()
@@ -139,6 +92,61 @@ class DrawIsoLineTool(BaseTool):
 
         self.preview_item.setPos(center_x, center_y)
         self.preview_item.update_geometry(length=length_3d, rot_y=rot_y, rot_z=rot_z)
+
+    def mouseReleaseEvent(self, event):
+        if self.start_pos is None or self.preview_item is None:
+            return
+
+        scene_pos = self.view.mapToScene(event.pos())
+        final_pos = self._get_snapped_pos(self.start_pos, scene_pos)
+
+        dx = final_pos.x() - self.start_pos.x()
+        dy = final_pos.y() - self.start_pos.y()
+
+        angle = math.radians(30)
+        c, s = math.cos(angle), math.sin(angle)
+
+        length_2d = math.hypot(dx, dy)
+        length_3d = 0
+        rot_y = 0
+        rot_z = 0
+
+        if length_2d > 0.1:
+            dir_x = dx / length_2d
+            dir_y = dy / length_2d
+
+            dot_x = dir_x * c + dir_y * s
+            dot_y = dir_x * (-c) + dir_y * s
+            dot_z = dir_x * 0 + dir_y * (-1)
+
+            max_dot = max(abs(dot_x), abs(dot_y), abs(dot_z))
+
+            if max_dot == abs(dot_x):
+                length_3d = length_2d / c
+                rot_z = 0 if dot_x > 0 else 180
+            elif max_dot == abs(dot_y):
+                length_3d = length_2d / c
+                rot_z = -90 if dot_y > 0 else 90
+            else:
+                length_3d = length_2d
+                rot_y = -90 if dot_z > 0 else 90
+
+        thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
+
+        self.view.scene.removeItem(self.preview_item)
+        self.preview_item = None
+
+        center_x = (self.start_pos.x() + final_pos.x()) / 2
+        center_y = (self.start_pos.y() + final_pos.y()) / 2
+
+        if length_3d > 0.1:
+            block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
+            block.update_geometry(rot_y=rot_y, rot_z=rot_z)
+            self.view.add_block(block, QPointF(center_x, center_y))
+            self.view.scene.clearSelection()
+            block.setSelected(True)
+
+        self.start_pos = None
 
     def _get_snapped_pos(self, start, current):
         dx = current.x() - start.x()
