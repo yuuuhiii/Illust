@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton,
-                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox)
+                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget)
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
 
         panel_layout.addWidget(QLabel("<b>【プロパティ】</b>"))
         
-        def create_spinbox(label, min_v, max_v, default_v, step=10):
+        def create_spinbox_layout(label, min_v, max_v, default_v, step=10, layout=None):
             h_layout = QHBoxLayout()
             h_layout.addWidget(QLabel(label))
             spin = QSpinBox()
@@ -68,17 +68,31 @@ class MainWindow(QMainWindow):
             spin.setSingleStep(step)
             spin.valueChanged.connect(self.update_selected_item)
             h_layout.addWidget(spin)
-            panel_layout.addLayout(h_layout)
+            if layout is not None:
+                layout.addLayout(h_layout)
             return spin
 
-        self.spin_w = create_spinbox("幅 (W):", 10, 500, 200)
-        self.spin_d = create_spinbox("奥行き (D):", 10, 500, 120)
-        self.spin_h = create_spinbox("高さ (H):", 1, 500, 30, step=1)
-        self.spin_opacity = create_spinbox("透過率 (%):", 10, 100, 100)
-        
-        panel_layout.addWidget(QLabel("<b>【線・矢印プロパティ】</b>"))
-        self.spin_length = create_spinbox("長さ (L):", 1, 1000, 100, step=10)
-        self.spin_thickness = create_spinbox("線の太さ:", 1, 100, 10, step=1)
+        self.prop_stack = QStackedWidget()
+
+        # Empty props (for select tool when nothing is selected)
+        w_empty = QWidget()
+        self.prop_stack.addWidget(w_empty)
+
+        # 1. Block Props
+        w_block = QWidget()
+        l_block = QVBoxLayout(w_block)
+        l_block.setContentsMargins(0, 0, 0, 0)
+        self.spin_w = create_spinbox_layout("幅 (W):", 10, 500, 200, layout=l_block)
+        self.spin_d = create_spinbox_layout("奥行き (D):", 10, 500, 120, layout=l_block)
+        self.spin_h = create_spinbox_layout("高さ (H):", 1, 500, 30, step=1, layout=l_block)
+        self.prop_stack.addWidget(w_block)
+
+        # 2. Line/Arrow Props
+        w_line = QWidget()
+        l_line = QVBoxLayout(w_line)
+        l_line.setContentsMargins(0, 0, 0, 0)
+        self.spin_length = create_spinbox_layout("長さ (L):", 1, 1000, 100, step=10, layout=l_line)
+        self.spin_thickness = create_spinbox_layout("線の太さ:", 1, 100, 10, step=1, layout=l_line)
 
         h_layout_arrow = QHBoxLayout()
         h_layout_arrow.addWidget(QLabel("矢印の形:"))
@@ -88,7 +102,7 @@ class MainWindow(QMainWindow):
         self.combo_arrow_type.addItem("立体", "cylinder")
         self.combo_arrow_type.currentIndexChanged.connect(self.update_selected_item)
         h_layout_arrow.addWidget(self.combo_arrow_type)
-        panel_layout.addLayout(h_layout_arrow)
+        l_line.addLayout(h_layout_arrow)
 
         h_layout_pos = QHBoxLayout()
         h_layout_pos.addWidget(QLabel("矢印の位置:"))
@@ -98,9 +112,13 @@ class MainWindow(QMainWindow):
         self.combo_arrow_pos.addItem("両端", "both")
         self.combo_arrow_pos.currentIndexChanged.connect(self.update_selected_item)
         h_layout_pos.addWidget(self.combo_arrow_pos)
-        panel_layout.addLayout(h_layout_pos)
+        l_line.addLayout(h_layout_pos)
+        self.prop_stack.addWidget(w_line)
 
-        panel_layout.addWidget(QLabel("<b>【2D図形プロパティ】</b>"))
+        # 3. Shape Props
+        w_shape = QWidget()
+        l_shape = QVBoxLayout(w_shape)
+        l_shape.setContentsMargins(0, 0, 0, 0)
         h_layout_shape = QHBoxLayout()
         h_layout_shape.addWidget(QLabel("図形:"))
         self.combo_shape_type = QComboBox()
@@ -108,32 +126,42 @@ class MainWindow(QMainWindow):
         self.combo_shape_type.addItem("円", "circle")
         self.combo_shape_type.currentIndexChanged.connect(self.update_selected_item)
         h_layout_shape.addWidget(self.combo_shape_type)
-        panel_layout.addLayout(h_layout_shape)
-        self.spin_shape_size = create_spinbox("サイズ:", 10, 1000, 100, step=10)
+        l_shape.addLayout(h_layout_shape)
+        self.spin_shape_size = create_spinbox_layout("サイズ:", 10, 1000, 100, step=10, layout=l_shape)
+        self.prop_stack.addWidget(w_shape)
 
-        panel_layout.addWidget(QLabel("<b>【テキストプロパティ】</b>"))
+        # 4. Text Props
+        w_text = QWidget()
+        l_text = QVBoxLayout(w_text)
+        l_text.setContentsMargins(0, 0, 0, 0)
         self.line_text = QLineEdit("Text")
         self.line_text.textChanged.connect(self.update_selected_item)
-        panel_layout.addWidget(self.line_text)
-        self.spin_font_size = create_spinbox("フォントサイズ:", 5, 200, 30, step=5)
+        l_text.addWidget(self.line_text)
+        self.spin_font_size = create_spinbox_layout("フォントサイズ:", 5, 200, 30, step=5, layout=l_text)
 
         h_layout_plane = QHBoxLayout()
         h_layout_plane.addWidget(QLabel("配置面:"))
         self.combo_plane = QComboBox()
         self.combo_plane.addItem("床面 (XY)", "XY")
-        self.combo_plane.addItem("右壁面 (YZ)", "YZ")
-        self.combo_plane.addItem("左壁面 (XZ)", "XZ")
+        self.combo_plane.addItem("右壁面 (XZ)", "XZ")
+        self.combo_plane.addItem("左壁面 (YZ)", "YZ")
         self.combo_plane.addItem("画面水平 (Screen)", "Screen")
         self.combo_plane.currentIndexChanged.connect(self.update_selected_item)
         h_layout_plane.addWidget(self.combo_plane)
-        panel_layout.addLayout(h_layout_plane)
+        l_text.addLayout(h_layout_plane)
+        self.prop_stack.addWidget(w_text)
 
-        panel_layout.addWidget(QLabel("<b>【共通 回転】</b>"))
-        self.spin_rot_x = create_spinbox("回転 X:", 0, 359, 0, step=5)
+        panel_layout.addWidget(self.prop_stack)
+
+        panel_layout.addWidget(QLabel("<b>【共通・回転・色】</b>"))
+
+        self.spin_opacity = create_spinbox_layout("透過率 (%):", 10, 100, 100, layout=panel_layout)
+
+        self.spin_rot_x = create_spinbox_layout("回転 X:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_x.setWrapping(True)
-        self.spin_rot_y = create_spinbox("回転 Y:", 0, 359, 0, step=5)
+        self.spin_rot_y = create_spinbox_layout("回転 Y:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_y.setWrapping(True)
-        self.spin_rot_z = create_spinbox("回転 Z:", 0, 359, 0, step=5)
+        self.spin_rot_z = create_spinbox_layout("回転 Z:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_z.setWrapping(True)
 
         self.current_color = QColor(150, 170, 220)
@@ -141,6 +169,12 @@ class MainWindow(QMainWindow):
         self.update_color_btn_style()
         self.btn_color.clicked.connect(self.choose_color)
         panel_layout.addWidget(self.btn_color)
+
+        btn_draw_iso.clicked.connect(lambda: self.prop_stack.setCurrentIndex(1))
+        btn_draw_line.clicked.connect(lambda: self.prop_stack.setCurrentIndex(2))
+        btn_draw_shape.clicked.connect(lambda: self.prop_stack.setCurrentIndex(3))
+        btn_draw_text.clicked.connect(lambda: self.prop_stack.setCurrentIndex(4))
+        btn_select.clicked.connect(lambda: self.sync_ui_to_selection())
         
         panel_layout.addSpacing(20)
 
@@ -180,7 +214,13 @@ class MainWindow(QMainWindow):
 
     def sync_ui_to_selection(self):
         selected = self.canvas.scene.selectedItems()
+        if not selected:
+            if isinstance(self.canvas.tool_manager.current_tool, SelectTool):
+                self.prop_stack.setCurrentIndex(0)
+            return
+
         if selected and isinstance(selected[0], IsoBlockItem):
+            self.prop_stack.setCurrentIndex(1)
             item = selected[0]
             self.spin_w.blockSignals(True); self.spin_w.setValue(item.w); self.spin_w.blockSignals(False)
             self.spin_d.blockSignals(True); self.spin_d.setValue(item.d); self.spin_d.blockSignals(False)
@@ -196,6 +236,7 @@ class MainWindow(QMainWindow):
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         elif selected and isinstance(selected[0], IsoLineItem):
+            self.prop_stack.setCurrentIndex(2)
             item = selected[0]
             self.spin_length.blockSignals(True); self.spin_length.setValue(int(item.length)); self.spin_length.blockSignals(False)
             self.spin_thickness.blockSignals(True); self.spin_thickness.setValue(int(item.thickness)); self.spin_thickness.blockSignals(False)
@@ -218,6 +259,7 @@ class MainWindow(QMainWindow):
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         elif selected and isinstance(selected[0], IsoShapeItem):
+            self.prop_stack.setCurrentIndex(3)
             item = selected[0]
             self.spin_shape_size.blockSignals(True); self.spin_shape_size.setValue(int(item.size)); self.spin_shape_size.blockSignals(False)
             self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
@@ -235,6 +277,7 @@ class MainWindow(QMainWindow):
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         elif selected and isinstance(selected[0], IsoTextItem):
+            self.prop_stack.setCurrentIndex(4)
             item = selected[0]
             self.line_text.blockSignals(True); self.line_text.setText(item.text); self.line_text.blockSignals(False)
             self.spin_font_size.blockSignals(True); self.spin_font_size.setValue(int(item.font_size)); self.spin_font_size.blockSignals(False)
