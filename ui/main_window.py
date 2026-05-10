@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton,
-                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget)
+                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea)
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 
@@ -195,13 +195,16 @@ class MainWindow(QMainWindow):
         btn_delete.clicked.connect(self.delete_selected)
         panel_layout.addWidget(btn_delete)
 
-        panel_layout.addStretch()
-
         panel_widget = QWidget()
         panel_widget.setLayout(panel_layout)
-        panel_widget.setFixedWidth(280)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(panel_widget)
+        scroll_area.setFixedWidth(300)
+
         main_layout.addWidget(self.canvas)
-        main_layout.addWidget(panel_widget)
+        main_layout.addWidget(scroll_area)
         
         main_widget = QWidget()
         main_widget.setLayout(main_layout)
