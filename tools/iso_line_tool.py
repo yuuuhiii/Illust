@@ -24,8 +24,8 @@ class DrawIsoLineTool(BaseTool):
 
         if self.start_pos is None:
             self.start_pos = scene_pos
-            thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
-            self.preview_item = IsoLineItem(length=1, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
+            thickness, arrow_type, arrow_pos, color, opacity, _, _, _ = self.get_props_func()
+            self.preview_item = IsoLineItem(length=1, thickness=thickness, arrow_type=arrow_type, arrow_pos=arrow_pos, base_color=color, opacity=opacity)
             self.view.scene.addItem(self.preview_item)
             self.preview_item.setPos(scene_pos)
         else:
@@ -105,13 +105,13 @@ class DrawIsoLineTool(BaseTool):
         res = self.update_preview(scene_pos)
         if res:
             length_3d, rot_y, rot_z, center_x, center_y = res
-            thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
+            thickness, arrow_type, arrow_pos, color, opacity, _, _, _ = self.get_props_func()
 
             self.view.scene.removeItem(self.preview_item)
             self.preview_item = None
 
             if length_3d > 0.1:
-                block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
+                block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, arrow_pos=arrow_pos, base_color=color, opacity=opacity)
                 block.update_geometry(rot_y=rot_y, rot_z=rot_z)
                 self.view.add_block(block, QPointF(center_x, center_y))
                 self.view.scene.clearSelection()

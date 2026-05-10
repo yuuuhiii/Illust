@@ -17,6 +17,8 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.base_color = base_color
         self.opacity_val = opacity
 
+        from PyQt6.QtWidgets import QGraphicsLineItem
+
         self.top_item = QGraphicsPolygonItem()
         self.right_item = QGraphicsPolygonItem()
         self.left_item = QGraphicsPolygonItem()
@@ -27,6 +29,19 @@ class IsoBlockItem(QGraphicsItemGroup):
         for item in [self.top_item, self.right_item, self.left_item]:
             item.setPen(pen)
             self.addToGroup(item)
+
+        # Axes
+        self.axis_x = QGraphicsLineItem()
+        self.axis_y = QGraphicsLineItem()
+        self.axis_z = QGraphicsLineItem()
+
+        self.axis_x.setPen(QPen(Qt.GlobalColor.red, 2))
+        self.axis_y.setPen(QPen(Qt.GlobalColor.green, 2))
+        self.axis_z.setPen(QPen(Qt.GlobalColor.blue, 2))
+
+        for ax in [self.axis_x, self.axis_y, self.axis_z]:
+            self.addToGroup(ax)
+            ax.hide()
 
         self.update_geometry()
 
@@ -66,12 +81,38 @@ class IsoBlockItem(QGraphicsItemGroup):
             self.top_item.setPen(sel_pen)
             self.right_item.setPen(sel_pen)
             self.left_item.setPen(sel_pen)
+
+            # Draw axes at the center of the block
+            cx = (v_front_top.x() + v_back_top.x()) / 2
+            cy = (v_front_top.y() + v_back_top.y() + v_front_bottom.y()) / 2
+
+            # Isometric directions for X, Y, Z
+            # X goes right-down, Y goes left-down, Z goes up
+            len_ax = max(50.0, max(self.w, self.d, self.h) * 0.5)
+
+            p_center = QPointF(cx, cy)
+            p_x = QPointF(cx + len_ax * cos_a, cy - len_ax * sin_a)
+            p_y = QPointF(cx - len_ax * cos_a, cy - len_ax * sin_a)
+            p_z = QPointF(cx, cy - len_ax)
+
+            self.axis_x.setLine(p_center.x(), p_center.y(), p_x.x(), p_x.y())
+            self.axis_y.setLine(p_center.x(), p_center.y(), p_y.x(), p_y.y())
+            self.axis_z.setLine(p_center.x(), p_center.y(), p_z.x(), p_z.y())
+
+            self.axis_x.show()
+            self.axis_y.show()
+            self.axis_z.show()
+
         else:
             norm_pen = QPen(Qt.GlobalColor.black, 1.5)
             norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             self.top_item.setPen(norm_pen)
             self.right_item.setPen(norm_pen)
             self.left_item.setPen(norm_pen)
+
+            self.axis_x.hide()
+            self.axis_y.hide()
+            self.axis_z.hide()
 
     def boundingRect(self):
         return self.childrenBoundingRect()
