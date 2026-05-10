@@ -2,6 +2,7 @@ import math
 from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
 from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
 from PyQt6.QtCore import Qt, QPointF
+from items.math3d import rotate_3d, project_iso, compute_normal
 
 class IsoBlockItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
@@ -16,19 +17,13 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.w, self.d, self.h = w, d, h
         self.base_color = base_color
         self.opacity_val = opacity
+        self.rot_x = 0.0
+        self.rot_y = 0.0
+        self.rot_z = 0.0
 
         from PyQt6.QtWidgets import QGraphicsLineItem
 
-        self.top_item = QGraphicsPolygonItem()
-        self.right_item = QGraphicsPolygonItem()
-        self.left_item = QGraphicsPolygonItem()
-
-        pen = QPen(Qt.GlobalColor.black, 1.5)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-
-        for item in [self.top_item, self.right_item, self.left_item]:
-            item.setPen(pen)
-            item.setParentItem(self)
+        self.poly_items = []
 
         # Axes
         self.axis_x = QGraphicsLineItem()
@@ -40,79 +35,209 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.axis_z.setPen(QPen(Qt.GlobalColor.blue, 2))
 
         for ax in [self.axis_x, self.axis_y, self.axis_z]:
-            self.addToGroup(ax)
+            ax.setParentItem(self)
             ax.hide()
 
         self.update_geometry()
 
-    def update_geometry(self, w=None, d=None, h=None, base_color=None, opacity=None):
+    def _generate_mesh(self):
+        faces = []
+
+        # Origin maps to front top point as in original implementation.
+        # Original:
+        # X: right down (w)
+        # Y: left down (d)
+        # Z: up (h) but drawing went down for height.
+        # Let's map X=w, Y=-d, Z=-h in standard space, then translate.
+
+        # To match original IsoBlockItem exactly when rotations are 0:
+        # Front top is 0,0.
+        # X axis (width) goes in X direction.
+        # Y axis (depth) goes in Y direction.
+        # Z axis (height) goes down in 2D, which means -Z in our project_iso function?
+        # Let's check project_iso: (x-y)*c, (x+y)*s - z.
+        # Original v_right_top: (w*c, -w*s). Wait, project_iso for (w, 0, 0) gives (w*c, w*s).
+        # Let's see: project_iso(x,y,z) = (x-y)*c, (x+y)*s - z.
+        # Original v_right_top: x = w*c, y = w*s ? No, original says: x = w*c, y = -w*s.
+        # Oh, if we use project_iso(w, 0, 0), it gives: x = w*c, y = w*s.
+        # But wait, original says: v_right_top = (w*cos_a, -w*sin_a) -> this means it goes up-right.
+        # Let's adjust coordinate generation for this block to match the original orientation.
+        # If we just want a box:
+        # We can construct the 8 vertices and then the 6 faces.
+
+        x0, x1 = 0, self.w
+        y0, y1 = 0, -self.d
+        z0, z1 = 0, -self.h
+
+        # Wait, if y=-self.d, then project_iso(0, -d, 0) = (+d*c, -d*s). Original v_left_top was (-d*c, -d*s).
+        # Ah. project_iso(x,y,z) gives x_iso = (x-y)*c, y_iso = (x+y)*s - z.
+        # To get x_iso = w*c, y_iso = w*s: let x=w, y=0, z=0. Then x_iso = w*c, y_iso = w*s. But original has -w*s.
+        # Actually, in original code:
+        # v_right_top = (w*cos_a, -w*sin_a) -> actually the screen Y axis goes down, so -w*sin_a means it goes UP on screen.
+        # But project_iso(x, y, z) = ( (x-y)*c, (x+y)*s - z )
+        # If we put (w, 0, 0) -> (w*c, w*s). This goes down-right.
+        # The original code's "angle = math.radians(30)".
+        # Let's check standard isometric projection in original IsoBlockItem:
+        # v_front_top = (0, 0)
+        # v_right_top = (w*c, -w*s)
+        # v_left_top = (-d*c, -d*s)
+        # v_back_top = ((w-d)*c, -(w+d)*s)
+        # v_front_bottom = (0, h)
+
+        # If we use project_iso(x,y,z):
+        # We want to find mapping from (x,y,z) to original.
+        # x_iso = (x-y)*c
+        # y_iso = (x+y)*s - z
+        # Let's map original vectors to (X,Y,Z) in our project_iso space:
+        # v_right_top = (w*c, -w*s). If we set X=w, Y=0, Z=0 => x_iso=w*c, y_iso=w*s. We want -w*s. So let Z = 2*w*s? No, just flip Y-axis?
+        # Actually, if we set X=0, Y=0, Z=0 => (0,0).
+        # If we set X=w, Y=-w, Z=0 => x_iso=(w-(-w))*c = 2w*c... No.
+        # Wait, what if we use X=w, Y=0, Z=2w*s ? No, X should just be width, Y should just be depth.
+        # The original IsoBlockItem uses an isometric projection where both right and left axes go UP (-Y in screen).
+        # This is a bit non-standard for games (usually they go down), but it's what it is.
+        # Actually, in original project_iso:
+        # def project_iso(x, y, z):
+        #     return (x - y) * c, (x + y) * s - z
+        # If we pass X=w, Y=0, Z=0 -> x_iso=w*c, y_iso=w*s.
+        # But wait! IsoLineItem uses project_iso. Let's see how IsoLineItem looks.
+        # IsoLineItem uses project_iso. Does it look consistent? Yes, probably.
+        # So we should just use our standard X, Y, Z for the block, and let the user see it in the standard isometric space of the application!
+        # If the standard space has X going down-right, Y going down-left, and Z going up, that's fine.
+        # Wait, if X goes right-down and Y goes left-down:
+        # X=(w,0,0) -> (w*c, w*s) -> right, down.
+        # Y=(0,d,0) -> (-d*c, d*s) -> left, down.
+        # Z=(0,0,h) -> (0, -h) -> up.
+        # Let's construct a standard box based on this.
+
+        # Vertices of the box
+        # X: [0, w]
+        # Y: [0, d]
+        # Z: [0, -h]  (to make it grow downwards on screen, Z should be negative? In original, v_front_bottom is at +h on screen Y, which means Z goes DOWN. So Z=0 to -h)
+
+        x0, x1 = 0, self.w
+        y0, y1 = 0, self.d
+        z0, z1 = 0, -self.h
+
+        # 8 vertices
+        v000 = (x0, y0, z0)
+        v100 = (x1, y0, z0)
+        v110 = (x1, y1, z0)
+        v010 = (x0, y1, z0)
+        v001 = (x0, y0, z1)
+        v101 = (x1, y0, z1)
+        v111 = (x1, y1, z1)
+        v011 = (x0, y1, z1)
+
+        faces = [
+            [v000, v100, v110, v010], # Top (z=0)
+            [v001, v011, v111, v101], # Bottom (z=-h)
+            [v000, v010, v011, v001], # Left (x=0)
+            [v100, v101, v111, v110], # Right (x=w)
+            [v000, v001, v101, v100], # Front (y=0)
+            [v010, v110, v111, v011], # Back (y=d)
+        ]
+
+        # We need to correctly align normals. The above vertices are ordered somewhat arbitrarily.
+        # Let's order them counter-clockwise when looking from outside.
+        faces = [
+            [v000, v010, v110, v100], # Top (z=0, looking from top, normal -z. Wait, Z is down, so Top is Z=0. Normal: up)
+            [v001, v101, v111, v011], # Bottom
+            [v000, v001, v011, v010], # Front-Left (x=0)
+            [v100, v110, v111, v101], # Back-Right (x=w)
+            [v000, v100, v101, v001], # Front-Right (y=0)
+            [v010, v011, v111, v110], # Back-Left (y=d)
+        ]
+
+        # Center of rotation should probably be the center of the block.
+        cx = self.w / 2
+        cy = self.d / 2
+        cz = -self.h / 2
+
+        # Shift to center, rotate, shift back
+        rot_faces = []
+        for face in faces:
+            rot_face = []
+            for px, py, pz in face:
+                px -= cx
+                py -= cy
+                pz -= cz
+                rx, ry, rz = rotate_3d(px, py, pz, self.rot_x, self.rot_y, self.rot_z)
+                rx += cx
+                ry += cy
+                rz += cz
+                rot_face.append((rx, ry, rz))
+            rot_faces.append(rot_face)
+
+        return rot_faces
+
+    def update_geometry(self, w=None, d=None, h=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
         self.prepareGeometryChange()
 
         if w is not None: self.w = w
         if d is not None: self.d = d
         if h is not None: self.h = h
         if base_color is not None: self.base_color = base_color
-        if opacity is not None: 
-            self.opacity_val = opacity
-            self.setOpacity(self.opacity_val / 100.0)
+        if opacity is not None: self.opacity_val = max(10, min(100, opacity))
+        if rot_x is not None: self.rot_x = rot_x
+        if rot_y is not None: self.rot_y = rot_y
+        if rot_z is not None: self.rot_z = rot_z
 
-        angle = math.radians(30)
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
+        self.setOpacity(self.opacity_val / 100.0)
+        faces = self._generate_mesh()
 
-        v_front_top = QPointF(0, 0)
-        v_right_top = QPointF(self.w * cos_a, -self.w * sin_a)
-        v_left_top = QPointF(-self.d * cos_a, -self.d * sin_a)
-        v_back_top = QPointF((self.w - self.d) * cos_a, -(self.w + self.d) * sin_a)
-        v_front_bottom = QPointF(0, self.h)
-        v_right_bottom = QPointF(self.w * cos_a, -self.w * sin_a + self.h)
-        v_left_bottom = QPointF(-self.d * cos_a, -self.d * sin_a + self.h)
+        visible_faces = []
+        for face in faces:
+            nx, ny, nz = compute_normal(face)
 
-        self.top_item.setPolygon(QPolygonF([v_front_top, v_right_top, v_back_top, v_left_top]))
-        self.right_item.setPolygon(QPolygonF([v_front_top, v_right_top, v_right_bottom, v_front_bottom]))
-        self.left_item.setPolygon(QPolygonF([v_front_top, v_left_top, v_left_bottom, v_front_bottom]))
+            cx = sum(v[0] for v in face) / len(face)
+            cy = sum(v[1] for v in face) / len(face)
+            cz = sum(v[2] for v in face) / len(face)
+            depth = cx + cy + cz
 
-        self.top_item.setBrush(QBrush(self.base_color.lighter(110)))
-        self.right_item.setBrush(QBrush(self.base_color.darker(130)))
-        self.left_item.setBrush(QBrush(self.base_color.darker(110)))
+            # Simple lighting
+            lx, ly, lz = 0.5, 1.0, 1.5
+            ll = math.sqrt(lx*lx + ly*ly + lz*lz)
+            dot = (nx*lx + ny*ly + nz*lz) / ll
+            factor = 0.4 + 0.6 * (0.5 + 0.5 * dot)
 
-        if self.isSelected():
-            sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
-            self.top_item.setPen(sel_pen)
-            self.right_item.setPen(sel_pen)
-            self.left_item.setPen(sel_pen)
+            poly = QPolygonF()
+            for rx, ry, rz in face:
+                sx, sy = project_iso(rx, ry, rz)
+                poly.append(QPointF(sx, sy))
 
-            # Draw axes at the center of the block
-            cx = (v_front_top.x() + v_back_top.x()) / 2
-            cy = (v_front_top.y() + v_back_top.y() + v_front_bottom.y()) / 2
+            visible_faces.append({'poly': poly, 'depth': depth, 'factor': factor, 'normal': (nx, ny, nz)})
 
-            # Isometric directions for X, Y, Z
-            # X goes right-down, Y goes left-down, Z goes up
-            len_ax = max(50.0, max(self.w, self.d, self.h) * 0.5)
+        visible_faces.sort(key=lambda f: f['depth'])
 
-            p_center = QPointF(cx, cy)
-            p_x = QPointF(cx + len_ax * cos_a, cy - len_ax * sin_a)
-            p_y = QPointF(cx - len_ax * cos_a, cy - len_ax * sin_a)
-            p_z = QPointF(cx, cy - len_ax)
+        # Clean up old polygons completely
+        for p in self.poly_items:
+            p.setParentItem(None)
+            if self.scene():
+                self.scene().removeItem(p)
+        self.poly_items.clear()
 
-            self.axis_x.setLine(p_center.x(), p_center.y(), p_x.x(), p_x.y())
-            self.axis_y.setLine(p_center.x(), p_center.y(), p_y.x(), p_y.y())
-            self.axis_z.setLine(p_center.x(), p_center.y(), p_z.x(), p_z.y())
+        sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+        norm_pen = QPen(Qt.GlobalColor.black, 1.5)
+        norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
-            self.axis_x.show()
-            self.axis_y.show()
-            self.axis_z.show()
+        for vf in visible_faces:
+            # Backface culling: if normal points away from camera
+            # Camera in iso is roughly (-1, -1, 1). Let's do simple dot product.
+            # Actually depth sorting is enough, but wait, faces inside shouldn't be rendered.
+            # Depth sorting draws back faces first, then front faces over them.
+            item = QGraphicsPolygonItem()
+            item.setPolygon(vf['poly'])
+            r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
+            g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
+            b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
+            item.setBrush(QBrush(QColor(r, g, b)))
+            item.setPen(sel_pen if self.isSelected() else norm_pen)
+            item.setParentItem(self)
+            self.poly_items.append(item)
 
-        else:
-            norm_pen = QPen(Qt.GlobalColor.black, 1.5)
-            norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            self.top_item.setPen(norm_pen)
-            self.right_item.setPen(norm_pen)
-            self.left_item.setPen(norm_pen)
-
-            self.axis_x.hide()
-            self.axis_y.hide()
-            self.axis_z.hide()
+        self.axis_x.hide()
+        self.axis_y.hide()
+        self.axis_z.hide()
 
     def boundingRect(self):
         return self.childrenBoundingRect()
@@ -122,10 +247,10 @@ class IsoBlockItem(QGraphicsItemGroup):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
-            if IsoBlockItem.SNAP_ENABLED:
+            if self.SNAP_ENABLED:
                 new_pos = value
-                x = round(new_pos.x() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-                y = round(new_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
+                x = round(new_pos.x() / self.GRID_SIZE) * self.GRID_SIZE
+                y = round(new_pos.y() / self.GRID_SIZE) * self.GRID_SIZE
                 return QPointF(x, y)
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()

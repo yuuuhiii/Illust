@@ -3,18 +3,23 @@ from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPu
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 
+from PyQt6.QtWidgets import QLineEdit
 from canvas.view import CanvasView
 from tools.select_tool import SelectTool
 from tools.iso_tool import DrawIsoBlockTool
 from tools.iso_line_tool import DrawIsoLineTool
+from tools.iso_shape_tool import DrawIsoShapeTool
+from tools.iso_text_tool import DrawIsoTextTool
 from items.iso_block import IsoBlockItem
 from items.iso_line import IsoLineItem
+from items.iso_shape import IsoShapeItem
+from items.iso_text import IsoTextItem
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("汎用3D概念図エディタ (ファイル分割・配列レイヤー版)")
-        self.resize(1100, 700)
+        self.resize(1200, 800)
 
         main_layout = QHBoxLayout()
         self.canvas = CanvasView()
@@ -33,9 +38,17 @@ class MainWindow(QMainWindow):
         btn_draw_line = QPushButton("線・矢印ツール")
         btn_draw_line.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoLineTool(self.canvas, self.get_line_props)))
 
+        btn_draw_shape = QPushButton("2D図形ツール")
+        btn_draw_shape.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoShapeTool(self.canvas, self.get_shape_props)))
+
+        btn_draw_text = QPushButton("3Dテキストツール")
+        btn_draw_text.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoTextTool(self.canvas, self.get_text_props)))
+
         panel_layout.addWidget(btn_select)
         panel_layout.addWidget(btn_draw_iso)
         panel_layout.addWidget(btn_draw_line)
+        panel_layout.addWidget(btn_draw_shape)
+        panel_layout.addWidget(btn_draw_text)
         
         self.cb_snap = QCheckBox("グリッドにスナップ")
         self.cb_snap.setChecked(True)
@@ -87,6 +100,35 @@ class MainWindow(QMainWindow):
         h_layout_pos.addWidget(self.combo_arrow_pos)
         panel_layout.addLayout(h_layout_pos)
 
+        panel_layout.addWidget(QLabel("<b>【2D図形プロパティ】</b>"))
+        h_layout_shape = QHBoxLayout()
+        h_layout_shape.addWidget(QLabel("図形:"))
+        self.combo_shape_type = QComboBox()
+        self.combo_shape_type.addItem("四角", "square")
+        self.combo_shape_type.addItem("円", "circle")
+        self.combo_shape_type.currentIndexChanged.connect(self.update_selected_item)
+        h_layout_shape.addWidget(self.combo_shape_type)
+        panel_layout.addLayout(h_layout_shape)
+        self.spin_shape_size = create_spinbox("サイズ:", 10, 1000, 100, step=10)
+
+        panel_layout.addWidget(QLabel("<b>【テキストプロパティ】</b>"))
+        self.line_text = QLineEdit("Text")
+        self.line_text.textChanged.connect(self.update_selected_item)
+        panel_layout.addWidget(self.line_text)
+        self.spin_font_size = create_spinbox("フォントサイズ:", 5, 200, 30, step=5)
+
+        h_layout_plane = QHBoxLayout()
+        h_layout_plane.addWidget(QLabel("配置面:"))
+        self.combo_plane = QComboBox()
+        self.combo_plane.addItem("床面 (XY)", "XY")
+        self.combo_plane.addItem("右壁面 (YZ)", "YZ")
+        self.combo_plane.addItem("左壁面 (XZ)", "XZ")
+        self.combo_plane.addItem("画面水平 (Screen)", "Screen")
+        self.combo_plane.currentIndexChanged.connect(self.update_selected_item)
+        h_layout_plane.addWidget(self.combo_plane)
+        panel_layout.addLayout(h_layout_plane)
+
+        panel_layout.addWidget(QLabel("<b>【共通 回転】</b>"))
         self.spin_rot_x = create_spinbox("回転 X:", 0, 359, 0, step=5)
         self.spin_rot_x.setWrapping(True)
         self.spin_rot_y = create_spinbox("回転 Y:", 0, 359, 0, step=5)
@@ -133,6 +175,8 @@ class MainWindow(QMainWindow):
     def toggle_snap(self, state):
         IsoBlockItem.SNAP_ENABLED = (state == 2)
         IsoLineItem.SNAP_ENABLED = (state == 2)
+        IsoShapeItem.SNAP_ENABLED = (state == 2)
+        IsoTextItem.SNAP_ENABLED = (state == 2)
 
     def sync_ui_to_selection(self):
         selected = self.canvas.scene.selectedItems()
@@ -142,6 +186,9 @@ class MainWindow(QMainWindow):
             self.spin_d.blockSignals(True); self.spin_d.setValue(item.d); self.spin_d.blockSignals(False)
             self.spin_h.blockSignals(True); self.spin_h.setValue(item.h); self.spin_h.blockSignals(False)
             self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+            self.spin_rot_x.blockSignals(True); self.spin_rot_x.setValue(int(item.rot_x) % 360); self.spin_rot_x.blockSignals(False)
+            self.spin_rot_y.blockSignals(True); self.spin_rot_y.setValue(int(item.rot_y) % 360); self.spin_rot_y.blockSignals(False)
+            self.spin_rot_z.blockSignals(True); self.spin_rot_z.setValue(int(item.rot_z) % 360); self.spin_rot_z.blockSignals(False)
             self.current_color = item.base_color
             self.update_color_btn_style()
             
@@ -170,6 +217,38 @@ class MainWindow(QMainWindow):
 
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoShapeItem):
+            item = selected[0]
+            self.spin_shape_size.blockSignals(True); self.spin_shape_size.setValue(int(item.size)); self.spin_shape_size.blockSignals(False)
+            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+            self.spin_rot_x.blockSignals(True); self.spin_rot_x.setValue(int(item.rot_x) % 360); self.spin_rot_x.blockSignals(False)
+            self.spin_rot_y.blockSignals(True); self.spin_rot_y.setValue(int(item.rot_y) % 360); self.spin_rot_y.blockSignals(False)
+            self.spin_rot_z.blockSignals(True); self.spin_rot_z.setValue(int(item.rot_z) % 360); self.spin_rot_z.blockSignals(False)
+
+            idx = self.combo_shape_type.findData(item.shape_type)
+            if idx >= 0:
+                self.combo_shape_type.blockSignals(True); self.combo_shape_type.setCurrentIndex(idx); self.combo_shape_type.blockSignals(False)
+
+            self.current_color = item.base_color
+            self.update_color_btn_style()
+
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoTextItem):
+            item = selected[0]
+            self.line_text.blockSignals(True); self.line_text.setText(item.text); self.line_text.blockSignals(False)
+            self.spin_font_size.blockSignals(True); self.spin_font_size.setValue(int(item.font_size)); self.spin_font_size.blockSignals(False)
+            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+
+            idx = self.combo_plane.findData(item.plane)
+            if idx >= 0:
+                self.combo_plane.blockSignals(True); self.combo_plane.setCurrentIndex(idx); self.combo_plane.blockSignals(False)
+
+            self.current_color = item.base_color
+            self.update_color_btn_style()
+
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         else:
             self.label_z_index.setText("現在のレイヤー: -")
 
@@ -179,7 +258,10 @@ class MainWindow(QMainWindow):
             item = selected[0]
             item.update_geometry(w=self.spin_w.value(), d=self.spin_d.value(), 
                                  h=self.spin_h.value(), base_color=self.current_color,
-                                 opacity=self.spin_opacity.value())
+                                 opacity=self.spin_opacity.value(),
+                                 rot_x=self.spin_rot_x.value(),
+                                 rot_y=self.spin_rot_y.value(),
+                                 rot_z=self.spin_rot_z.value())
         elif selected and isinstance(selected[0], IsoLineItem):
             item = selected[0]
             item.update_geometry(length=self.spin_length.value(),
@@ -191,6 +273,22 @@ class MainWindow(QMainWindow):
                                  rot_x=self.spin_rot_x.value(),
                                  rot_y=self.spin_rot_y.value(),
                                  rot_z=self.spin_rot_z.value())
+        elif selected and isinstance(selected[0], IsoShapeItem):
+            item = selected[0]
+            item.update_geometry(shape_type=self.combo_shape_type.currentData(),
+                                 size=self.spin_shape_size.value(),
+                                 base_color=self.current_color,
+                                 opacity=self.spin_opacity.value(),
+                                 rot_x=self.spin_rot_x.value(),
+                                 rot_y=self.spin_rot_y.value(),
+                                 rot_z=self.spin_rot_z.value())
+        elif selected and isinstance(selected[0], IsoTextItem):
+            item = selected[0]
+            item.update_geometry(text=self.line_text.text(),
+                                 font_size=self.spin_font_size.value(),
+                                 plane=self.combo_plane.currentData(),
+                                 base_color=self.current_color,
+                                 opacity=self.spin_opacity.value())
 
     def choose_color(self):
         color = QColorDialog.getColor(self.current_color, self)
@@ -207,6 +305,12 @@ class MainWindow(QMainWindow):
 
     def get_line_props(self):
         return self.spin_thickness.value(), self.combo_arrow_type.currentData(), self.combo_arrow_pos.currentData(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
+
+    def get_shape_props(self):
+        return self.combo_shape_type.currentData(), self.spin_shape_size.value(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
+
+    def get_text_props(self):
+        return self.line_text.text(), self.spin_font_size.value(), self.combo_plane.currentData(), self.current_color, self.spin_opacity.value()
 
     def delete_selected(self):
         for item in self.canvas.scene.selectedItems():
