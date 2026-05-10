@@ -10,6 +10,7 @@ class DrawIsoLineTool(BaseTool):
         super().__init__(view)
         self.get_props_func = get_props_func
         self.view.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.view.setMouseTracking(True)
         self.start_pos = None
         self.preview_item = None
 

@@ -31,6 +31,8 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.update_geometry()
 
     def update_geometry(self, w=None, d=None, h=None, base_color=None, opacity=None):
+        self.prepareGeometryChange()
+
         if w is not None: self.w = w
         if d is not None: self.d = d
         if h is not None: self.h = h
@@ -59,17 +61,23 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.right_item.setBrush(QBrush(self.base_color.darker(130)))
         self.left_item.setBrush(QBrush(self.base_color.darker(110)))
 
+        if self.isSelected():
+            sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+            self.top_item.setPen(sel_pen)
+            self.right_item.setPen(sel_pen)
+            self.left_item.setPen(sel_pen)
+        else:
+            norm_pen = QPen(Qt.GlobalColor.black, 1.5)
+            norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            self.top_item.setPen(norm_pen)
+            self.right_item.setPen(norm_pen)
+            self.left_item.setPen(norm_pen)
+
     def boundingRect(self):
-        return self.childrenBoundingRect().adjusted(-3, -3, 3, 3)
+        return self.childrenBoundingRect()
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
-        if self.isSelected():
-            pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            # Expand the bounding rect slightly so it doesn't overlap perfectly with edges
-            painter.drawRect(self.boundingRect().adjusted(-2, -2, 2, 2))
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
@@ -78,7 +86,6 @@ class IsoBlockItem(QGraphicsItemGroup):
                 x = round(new_pos.x() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
                 y = round(new_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
                 return QPointF(x, y)
-        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
-            # Need to update rendering to show/hide bounding box
-            self.update()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            self.update_geometry()
         return super().itemChange(change, value)
