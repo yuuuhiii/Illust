@@ -36,6 +36,13 @@ class DrawIsoLineTool(BaseTool):
             return
 
         scene_pos = self.view.mapToScene(event.pos())
+        self.update_preview(scene_pos)
+
+    def mouseReleaseEvent(self, event):
+        if self.start_pos is None or self.preview_item is None:
+            return
+
+        scene_pos = self.view.mapToScene(event.pos())
         dx = scene_pos.x() - self.start_pos.x()
         dy = scene_pos.y() - self.start_pos.y()
 
@@ -47,12 +54,8 @@ class DrawIsoLineTool(BaseTool):
         # If they dragged a significant distance, finalize the line
         self.finalize_line(scene_pos)
 
-    def finalize_line(self, scene_pos):
-        if self.start_pos is None or self.preview_item is None:
-            return
-
+    def update_preview(self, scene_pos):
         final_pos = self._get_snapped_pos(self.start_pos, scene_pos)
-
         dx = final_pos.x() - self.start_pos.x()
         dy = final_pos.y() - self.start_pos.y()
 
@@ -92,59 +95,26 @@ class DrawIsoLineTool(BaseTool):
 
         self.preview_item.setPos(center_x, center_y)
         self.preview_item.update_geometry(length=length_3d, rot_y=rot_y, rot_z=rot_z)
+        return length_3d, rot_y, rot_z, center_x, center_y
 
-    def mouseReleaseEvent(self, event):
+    def finalize_line(self, scene_pos):
         if self.start_pos is None or self.preview_item is None:
             return
 
-        scene_pos = self.view.mapToScene(event.pos())
-        final_pos = self._get_snapped_pos(self.start_pos, scene_pos)
+        res = self.update_preview(scene_pos)
+        if res:
+            length_3d, rot_y, rot_z, center_x, center_y = res
+            thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
 
-        dx = final_pos.x() - self.start_pos.x()
-        dy = final_pos.y() - self.start_pos.y()
+            self.view.scene.removeItem(self.preview_item)
+            self.preview_item = None
 
-        angle = math.radians(30)
-        c, s = math.cos(angle), math.sin(angle)
-
-        length_2d = math.hypot(dx, dy)
-        length_3d = 0
-        rot_y = 0
-        rot_z = 0
-
-        if length_2d > 0.1:
-            dir_x = dx / length_2d
-            dir_y = dy / length_2d
-
-            dot_x = dir_x * c + dir_y * s
-            dot_y = dir_x * (-c) + dir_y * s
-            dot_z = dir_x * 0 + dir_y * (-1)
-
-            max_dot = max(abs(dot_x), abs(dot_y), abs(dot_z))
-
-            if max_dot == abs(dot_x):
-                length_3d = length_2d / c
-                rot_z = 0 if dot_x > 0 else 180
-            elif max_dot == abs(dot_y):
-                length_3d = length_2d / c
-                rot_z = -90 if dot_y > 0 else 90
-            else:
-                length_3d = length_2d
-                rot_y = -90 if dot_z > 0 else 90
-
-        thickness, arrow_type, color, opacity, _, _, _ = self.get_props_func()
-
-        self.view.scene.removeItem(self.preview_item)
-        self.preview_item = None
-
-        center_x = (self.start_pos.x() + final_pos.x()) / 2
-        center_y = (self.start_pos.y() + final_pos.y()) / 2
-
-        if length_3d > 0.1:
-            block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
-            block.update_geometry(rot_y=rot_y, rot_z=rot_z)
-            self.view.add_block(block, QPointF(center_x, center_y))
-            self.view.scene.clearSelection()
-            block.setSelected(True)
+            if length_3d > 0.1:
+                block = IsoLineItem(length=length_3d, thickness=thickness, arrow_type=arrow_type, base_color=color, opacity=opacity)
+                block.update_geometry(rot_y=rot_y, rot_z=rot_z)
+                self.view.add_block(block, QPointF(center_x, center_y))
+                self.view.scene.clearSelection()
+                block.setSelected(True)
 
         self.start_pos = None
 
