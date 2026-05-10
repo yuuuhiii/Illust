@@ -59,6 +59,14 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.right_item.setBrush(QBrush(self.base_color.darker(130)))
         self.left_item.setBrush(QBrush(self.base_color.darker(110)))
 
+    def paint(self, painter, option, widget=None):
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.boundingRect())
+
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             if IsoBlockItem.SNAP_ENABLED:
@@ -66,4 +74,7 @@ class IsoBlockItem(QGraphicsItemGroup):
                 x = round(new_pos.x() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
                 y = round(new_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
                 return QPointF(x, y)
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
+            # Need to update rendering to show/hide bounding box
+            self.update()
         return super().itemChange(change, value)

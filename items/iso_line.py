@@ -195,9 +195,20 @@ class IsoLineItem(QGraphicsItemGroup):
                 g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
                 b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
                 item.setBrush(QBrush(QColor(r, g, b)))
+                item.setPen(QPen(Qt.GlobalColor.black, 1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
                 item.show()
             else:
-                self.poly_items[i].hide()
+                # Use empty polygon instead of hide() so parent doesn't lose selection
+                self.poly_items[i].setPolygon(QPolygonF())
+                self.poly_items[i].setPen(QPen(Qt.PenStyle.NoPen))
+
+    def paint(self, painter, option, widget=None):
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(self.boundingRect())
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
@@ -206,4 +217,6 @@ class IsoLineItem(QGraphicsItemGroup):
                 x = round(new_pos.x() / self.GRID_SIZE) * self.GRID_SIZE
                 y = round(new_pos.y() / self.GRID_SIZE) * self.GRID_SIZE
                 return QPointF(x, y)
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedChange:
+            self.update()
         return super().itemChange(change, value)

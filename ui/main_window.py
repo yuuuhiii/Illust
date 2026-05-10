@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         self.spin_opacity = create_spinbox("透過率 (%):", 10, 100, 100)
         
         panel_layout.addWidget(QLabel("<b>【線・矢印プロパティ】</b>"))
+        self.spin_length = create_spinbox("長さ (L):", 1, 1000, 100, step=10)
         self.spin_thickness = create_spinbox("線の太さ:", 1, 100, 10, step=1)
 
         h_layout_arrow = QHBoxLayout()
@@ -136,6 +137,7 @@ class MainWindow(QMainWindow):
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         elif selected and isinstance(selected[0], IsoLineItem):
             item = selected[0]
+            self.spin_length.blockSignals(True); self.spin_length.setValue(int(item.length)); self.spin_length.blockSignals(False)
             self.spin_thickness.blockSignals(True); self.spin_thickness.setValue(int(item.thickness)); self.spin_thickness.blockSignals(False)
             self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
             self.spin_rot_x.blockSignals(True); self.spin_rot_x.setValue(int(item.rot_x) % 360); self.spin_rot_x.blockSignals(False)
@@ -163,7 +165,8 @@ class MainWindow(QMainWindow):
                                  opacity=self.spin_opacity.value())
         elif selected and isinstance(selected[0], IsoLineItem):
             item = selected[0]
-            item.update_geometry(thickness=self.spin_thickness.value(),
+            item.update_geometry(length=self.spin_length.value(),
+                                 thickness=self.spin_thickness.value(),
                                  arrow_type=self.combo_arrow_type.currentData(),
                                  base_color=self.current_color,
                                  opacity=self.spin_opacity.value(),
