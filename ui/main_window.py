@@ -77,9 +77,22 @@ class MainWindow(QMainWindow):
         h_layout_arrow.addWidget(self.combo_arrow_type)
         panel_layout.addLayout(h_layout_arrow)
 
-        self.spin_rot_x = create_spinbox("回転 X:", 0, 360, 0, step=5)
-        self.spin_rot_y = create_spinbox("回転 Y:", 0, 360, 0, step=5)
-        self.spin_rot_z = create_spinbox("回転 Z:", 0, 360, 0, step=5)
+        h_layout_pos = QHBoxLayout()
+        h_layout_pos.addWidget(QLabel("矢印の位置:"))
+        self.combo_arrow_pos = QComboBox()
+        self.combo_arrow_pos.addItem("終点", "end")
+        self.combo_arrow_pos.addItem("始点", "start")
+        self.combo_arrow_pos.addItem("両端", "both")
+        self.combo_arrow_pos.currentIndexChanged.connect(self.update_selected_item)
+        h_layout_pos.addWidget(self.combo_arrow_pos)
+        panel_layout.addLayout(h_layout_pos)
+
+        self.spin_rot_x = create_spinbox("回転 X:", 0, 359, 0, step=5)
+        self.spin_rot_x.setWrapping(True)
+        self.spin_rot_y = create_spinbox("回転 Y:", 0, 359, 0, step=5)
+        self.spin_rot_y.setWrapping(True)
+        self.spin_rot_z = create_spinbox("回転 Z:", 0, 359, 0, step=5)
+        self.spin_rot_z.setWrapping(True)
 
         self.current_color = QColor(150, 170, 220)
         self.btn_color = QPushButton("色を選択")
@@ -148,6 +161,10 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.combo_arrow_type.blockSignals(True); self.combo_arrow_type.setCurrentIndex(idx); self.combo_arrow_type.blockSignals(False)
 
+            idx_pos = self.combo_arrow_pos.findData(getattr(item, 'arrow_pos', 'end'))
+            if idx_pos >= 0:
+                self.combo_arrow_pos.blockSignals(True); self.combo_arrow_pos.setCurrentIndex(idx_pos); self.combo_arrow_pos.blockSignals(False)
+
             self.current_color = item.base_color
             self.update_color_btn_style()
 
@@ -168,6 +185,7 @@ class MainWindow(QMainWindow):
             item.update_geometry(length=self.spin_length.value(),
                                  thickness=self.spin_thickness.value(),
                                  arrow_type=self.combo_arrow_type.currentData(),
+                                 arrow_pos=self.combo_arrow_pos.currentData(),
                                  base_color=self.current_color,
                                  opacity=self.spin_opacity.value(),
                                  rot_x=self.spin_rot_x.value(),
@@ -188,7 +206,7 @@ class MainWindow(QMainWindow):
         return self.spin_w.value(), self.spin_d.value(), self.spin_h.value(), self.current_color, self.spin_opacity.value()
 
     def get_line_props(self):
-        return self.spin_thickness.value(), self.combo_arrow_type.currentData(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
+        return self.spin_thickness.value(), self.combo_arrow_type.currentData(), self.combo_arrow_pos.currentData(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
 
     def delete_selected(self):
         for item in self.canvas.scene.selectedItems():

@@ -103,7 +103,7 @@ class IsoLineItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
     GRID_SIZE = 10
 
-    def __init__(self, length=100, thickness=10, arrow_type="cylinder", base_color=QColor(200, 50, 50), opacity=100):
+    def __init__(self, length=100, thickness=10, arrow_type="cylinder", arrow_pos="end", base_color=QColor(200, 50, 50), opacity=100):
         super().__init__()
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsSelectable)
@@ -112,40 +112,72 @@ class IsoLineItem(QGraphicsItemGroup):
         self.length = length
         self.thickness = thickness
         self.arrow_type = arrow_type # "none", "flat", "cylinder"
+        self.arrow_pos = arrow_pos # "end", "start", "both"
         self.base_color = base_color
         self.opacity_val = opacity
         self.rot_x = 0.0
         self.rot_y = 0.0
         self.rot_z = 0.0
 
+        from PyQt6.QtWidgets import QGraphicsLineItem
+
         self.poly_items = []
+
+        self.axis_x = QGraphicsLineItem()
+        self.axis_y = QGraphicsLineItem()
+        self.axis_z = QGraphicsLineItem()
+
+        self.axis_x.setPen(QPen(Qt.GlobalColor.red, 2))
+        self.axis_y.setPen(QPen(Qt.GlobalColor.green, 2))
+        self.axis_z.setPen(QPen(Qt.GlobalColor.blue, 2))
+
+        for ax in [self.axis_x, self.axis_y, self.axis_z]:
+            self.addToGroup(ax)
+            ax.hide()
+
         self.update_geometry()
 
     def _generate_mesh(self):
         faces = []
         if self.length <= 0: return faces
 
+        al = min(self.thickness * 3, self.length / 2 if self.arrow_pos == "both" else self.length)
+        draw_start = self.arrow_pos in ["start", "both"]
+        draw_end = self.arrow_pos in ["end", "both"]
+
+        start_al = al if draw_start else 0
+        end_al = al if draw_end else 0
+
+        ll = self.length - start_al - end_al
+
         if self.arrow_type == "flat":
-            al = min(self.thickness * 3, self.length)
-            ll = self.length - al
-            if ll > 0: faces.extend(generate_box(ll, self.thickness, max(1, self.thickness * 0.2), -self.length/2))
-            if al > 0: faces.extend(generate_flat_arrow(self.thickness * 2.5, al, max(1, self.thickness * 0.2), -self.length/2 + ll))
+            if ll > 0: faces.extend(generate_box(ll, self.thickness, max(1, self.thickness * 0.2), -self.length/2 + start_al))
+            if end_al > 0: faces.extend(generate_flat_arrow(self.thickness * 2.5, end_al, max(1, self.thickness * 0.2), -self.length/2 + start_al + ll))
+            if start_al > 0:
+                start_faces = generate_flat_arrow(self.thickness * 2.5, start_al, max(1, self.thickness * 0.2), -start_al)
+                # Mirror arrow for start
+                start_faces = [[(-x + -self.length + start_al, y, z) for x, y, z in f] for f in start_faces]
+                faces.extend(start_faces)
         elif self.arrow_type == "cylinder":
-            al = min(self.thickness * 3, self.length)
-            ll = self.length - al
-            if ll > 0: faces.extend(generate_cylinder(self.thickness / 2, ll, segments=12, offset_x=-self.length/2))
-            if al > 0: faces.extend(generate_cone(self.thickness * 1.2, al, segments=12, offset_x=-self.length/2 + ll))
+            if ll > 0: faces.extend(generate_cylinder(self.thickness / 2, ll, segments=12, offset_x=-self.length/2 + start_al))
+            if end_al > 0: faces.extend(generate_cone(self.thickness * 1.2, end_al, segments=12, offset_x=-self.length/2 + start_al + ll))
+            if start_al > 0:
+                start_faces = generate_cone(self.thickness * 1.2, start_al, segments=12, offset_x=-start_al)
+                # Mirror cone for start
+                start_faces = [[(-x + -self.length + start_al, y, z) for x, y, z in f] for f in start_faces]
+                faces.extend(start_faces)
         else: # none
             faces.extend(generate_cylinder(self.thickness / 2, self.length, segments=12, offset_x=-self.length/2))
 
         return faces
 
-    def update_geometry(self, length=None, thickness=None, arrow_type=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
+    def update_geometry(self, length=None, thickness=None, arrow_type=None, arrow_pos=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
         self.prepareGeometryChange()
 
         if length is not None: self.length = max(1, length)
         if thickness is not None: self.thickness = max(1, thickness)
         if arrow_type is not None: self.arrow_type = arrow_type
+        if arrow_pos is not None: self.arrow_pos = arrow_pos
         if base_color is not None: self.base_color = base_color
         if opacity is not None: self.opacity_val = max(10, min(100, opacity))
         if rot_x is not None: self.rot_x = rot_x
@@ -179,32 +211,46 @@ class IsoLineItem(QGraphicsItemGroup):
 
         visible_faces.sort(key=lambda f: f['depth'])
 
-        while len(self.poly_items) < len(visible_faces):
-            item = QGraphicsPolygonItem()
-            pen = QPen(Qt.GlobalColor.black, 1.0)
-            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            item.setPen(pen)
-            self.addToGroup(item)
-            self.poly_items.append(item)
+        # Clean up old polygons completely to prevent rendering artifacts during dragging
+        for p in self.poly_items:
+            self.removeFromGroup(p)
+            if self.scene():
+                self.scene().removeItem(p)
+        self.poly_items.clear()
 
         sel_pen = QPen(Qt.GlobalColor.blue, 1.5, Qt.PenStyle.DashLine)
         norm_pen = QPen(Qt.GlobalColor.black, 1.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
 
-        for i in range(len(self.poly_items)):
-            if i < len(visible_faces):
-                vf = visible_faces[i]
-                item = self.poly_items[i]
-                item.setPolygon(vf['poly'])
-                r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
-                g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
-                b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
-                item.setBrush(QBrush(QColor(r, g, b)))
-                item.setPen(sel_pen if self.isSelected() else norm_pen)
-                item.show()
-            else:
-                # Use empty polygon instead of hide() so parent doesn't lose selection
-                self.poly_items[i].setPolygon(QPolygonF())
-                self.poly_items[i].setPen(QPen(Qt.PenStyle.NoPen))
+        for vf in visible_faces:
+            item = QGraphicsPolygonItem()
+            item.setPolygon(vf['poly'])
+            r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
+            g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
+            b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
+            item.setBrush(QBrush(QColor(r, g, b)))
+            item.setPen(sel_pen if self.isSelected() else norm_pen)
+            self.addToGroup(item)
+            self.poly_items.append(item)
+
+        if self.isSelected():
+            len_ax = max(50.0, self.length * 0.5)
+
+            p_center = project_iso(*rotate_3d(0, 0, 0, self.rot_x, self.rot_y, self.rot_z))
+            p_x = project_iso(*rotate_3d(len_ax, 0, 0, self.rot_x, self.rot_y, self.rot_z))
+            p_y = project_iso(*rotate_3d(0, len_ax, 0, self.rot_x, self.rot_y, self.rot_z))
+            p_z = project_iso(*rotate_3d(0, 0, len_ax, self.rot_x, self.rot_y, self.rot_z))
+
+            self.axis_x.setLine(p_center[0], p_center[1], p_x[0], p_x[1])
+            self.axis_y.setLine(p_center[0], p_center[1], p_y[0], p_y[1])
+            self.axis_z.setLine(p_center[0], p_center[1], p_z[0], p_z[1])
+
+            self.axis_x.show()
+            self.axis_y.show()
+            self.axis_z.show()
+        else:
+            self.axis_x.hide()
+            self.axis_y.hide()
+            self.axis_z.hide()
 
     def boundingRect(self):
         return self.childrenBoundingRect()
