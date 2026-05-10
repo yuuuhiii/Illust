@@ -17,7 +17,6 @@ def rotate_3d(x, y, z, rx, ry, rz):
         c, s = math.cos(rad), math.sin(rad)
         x, y = x * c - y * s, x * s + y * c
     return x, y, z
-
 def project_iso(x, y, z):
     angle = math.radians(30)
     c, s = math.cos(angle), math.sin(angle)
@@ -37,15 +36,23 @@ def compute_normal(face):
 
 def generate_cylinder(radius, length, segments=12, offset_x=0):
     faces = []
-    x1, x2 = offset_x, offset_x + length
-    for i in range(segments):
-        a1 = i * 2 * math.pi / segments
-        a2 = (i + 1) * 2 * math.pi / segments
-        y1, z1 = math.cos(a1) * radius, math.sin(a1) * radius
-        y2, z2 = math.cos(a2) * radius, math.sin(a2) * radius
-        faces.append([(x1, y1, z1), (x1, y2, z2), (x2, y2, z2), (x2, y1, z1)])
-    faces.append([(x1, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)][::-1])
-    faces.append([(x2, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)])
+    # Subdivide long cylinders to fix depth sorting
+    length_segments = max(1, int(length / 10))
+    seg_len = length / length_segments
+
+    for ls in range(length_segments):
+        x1 = offset_x + ls * seg_len
+        x2 = offset_x + (ls + 1) * seg_len
+        for i in range(segments):
+            a1 = i * 2 * math.pi / segments
+            a2 = (i + 1) * 2 * math.pi / segments
+            y1, z1 = math.cos(a1) * radius, math.sin(a1) * radius
+            y2, z2 = math.cos(a2) * radius, math.sin(a2) * radius
+            faces.append([(x1, y1, z1), (x1, y2, z2), (x2, y2, z2), (x2, y1, z1)])
+
+    # Caps
+    faces.append([(offset_x, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)][::-1])
+    faces.append([(offset_x + length, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)])
     return faces
 
 def generate_cone(radius, length, segments=12, offset_x=0):
@@ -61,17 +68,26 @@ def generate_cone(radius, length, segments=12, offset_x=0):
     return faces
 
 def generate_box(length, width, height, offset_x=0):
-    x1, x2 = offset_x, offset_x + length
+    faces = []
+    length_segments = max(1, int(length / 10))
+    seg_len = length / length_segments
     w, h = width / 2, height / 2
-    return [
-        [(x1, w, -h), (x2, w, -h), (x2, -w, -h), (x1, -w, -h)],
-        [(x1, -w, h), (x2, -w, h), (x2, w, h), (x1, w, h)],
-        [(x1, -w, -h), (x2, -w, -h), (x2, -w, h), (x1, -w, h)],
-        [(x1, w, h), (x2, w, h), (x2, w, -h), (x1, w, -h)],
-        [(x1, -w, -h), (x1, -w, h), (x1, w, h), (x1, w, -h)],
-        [(x2, w, -h), (x2, w, h), (x2, -w, h), (x2, -w, -h)]
-    ]
 
+    for ls in range(length_segments):
+        x1 = offset_x + ls * seg_len
+        x2 = offset_x + (ls + 1) * seg_len
+        faces.extend([
+            [(x1, w, -h), (x2, w, -h), (x2, -w, -h), (x1, -w, -h)],
+            [(x1, -w, h), (x2, -w, h), (x2, w, h), (x1, w, h)],
+            [(x1, -w, -h), (x2, -w, -h), (x2, -w, h), (x1, -w, h)],
+            [(x1, w, h), (x2, w, h), (x2, w, -h), (x1, w, -h)],
+        ])
+
+    faces.extend([
+        [(offset_x, -w, -h), (offset_x, -w, h), (offset_x, w, h), (offset_x, w, -h)],
+        [(offset_x + length, w, -h), (offset_x + length, w, h), (offset_x + length, -w, h), (offset_x + length, -w, -h)]
+    ])
+    return faces
 def generate_flat_arrow(width, length, height, offset_x=0):
     x1, x2 = offset_x, offset_x + length
     w, h = width / 2, height / 2
@@ -170,20 +186,18 @@ class IsoLineItem(QGraphicsItemGroup):
             self.addToGroup(item)
             self.poly_items.append(item)
 
-        while len(self.poly_items) > len(visible_faces):
-            item = self.poly_items.pop()
-            self.removeFromGroup(item)
-            if item.scene():
-                item.scene().removeItem(item)
-
-        for i, vf in enumerate(visible_faces):
-            item = self.poly_items[i]
-            item.setPolygon(vf['poly'])
-            r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
-            g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
-            b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
-            item.setBrush(QBrush(QColor(r, g, b)))
-            item.show()
+        for i in range(len(self.poly_items)):
+            if i < len(visible_faces):
+                vf = visible_faces[i]
+                item = self.poly_items[i]
+                item.setPolygon(vf['poly'])
+                r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
+                g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
+                b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
+                item.setBrush(QBrush(QColor(r, g, b)))
+                item.show()
+            else:
+                self.poly_items[i].hide()
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
