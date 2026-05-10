@@ -59,13 +59,17 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.right_item.setBrush(QBrush(self.base_color.darker(130)))
         self.left_item.setBrush(QBrush(self.base_color.darker(110)))
 
+    def boundingRect(self):
+        return self.childrenBoundingRect().adjusted(-3, -3, 3, 3)
+
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
         if self.isSelected():
             pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect())
+            # Expand the bounding rect slightly so it doesn't overlap perfectly with edges
+            painter.drawRect(self.boundingRect().adjusted(-2, -2, 2, 2))
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():

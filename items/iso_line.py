@@ -158,23 +158,22 @@ class IsoLineItem(QGraphicsItemGroup):
             rot_face = [rotate_3d(x, y, z, self.rot_x, self.rot_y, self.rot_z) for x, y, z in face]
             nx, ny, nz = compute_normal(rot_face)
 
-            if nx + ny + nz >= -0.01:
-                cx = sum(v[0] for v in rot_face) / len(rot_face)
-                cy = sum(v[1] for v in rot_face) / len(rot_face)
-                cz = sum(v[2] for v in rot_face) / len(rot_face)
-                depth = cx + cy + cz
+            cx = sum(v[0] for v in rot_face) / len(rot_face)
+            cy = sum(v[1] for v in rot_face) / len(rot_face)
+            cz = sum(v[2] for v in rot_face) / len(rot_face)
+            depth = cx + cy + cz
 
-                lx, ly, lz = 0.5, 1.0, 1.5
-                ll = math.sqrt(lx*lx + ly*ly + lz*lz)
-                dot = (nx*lx + ny*ly + nz*lz) / ll
-                factor = 0.4 + 0.6 * (0.5 + 0.5 * dot)
+            lx, ly, lz = 0.5, 1.0, 1.5
+            ll = math.sqrt(lx*lx + ly*ly + lz*lz)
+            dot = (nx*lx + ny*ly + nz*lz) / ll
+            factor = 0.4 + 0.6 * (0.5 + 0.5 * dot)
 
-                poly = QPolygonF()
-                for rx, ry, rz in rot_face:
-                    sx, sy = project_iso(rx, ry, rz)
-                    poly.append(QPointF(sx, sy))
+            poly = QPolygonF()
+            for rx, ry, rz in rot_face:
+                sx, sy = project_iso(rx, ry, rz)
+                poly.append(QPointF(sx, sy))
 
-                visible_faces.append({'poly': poly, 'depth': depth, 'factor': factor})
+            visible_faces.append({'poly': poly, 'depth': depth, 'factor': factor})
 
         visible_faces.sort(key=lambda f: f['depth'])
 
@@ -202,13 +201,17 @@ class IsoLineItem(QGraphicsItemGroup):
                 self.poly_items[i].setPolygon(QPolygonF())
                 self.poly_items[i].setPen(QPen(Qt.PenStyle.NoPen))
 
+    def boundingRect(self):
+        return self.childrenBoundingRect().adjusted(-3, -3, 3, 3)
+
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
         if self.isSelected():
             pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(self.boundingRect())
+            # Expand the bounding rect slightly so it doesn't overlap perfectly with edges
+            painter.drawRect(self.boundingRect().adjusted(-2, -2, 2, 2))
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
