@@ -28,7 +28,7 @@ class IsoBlockItem(QGraphicsItemGroup):
 
         for item in [self.top_item, self.right_item, self.left_item]:
             item.setPen(pen)
-            self.addToGroup(item)
+            item.setParentItem(self)
 
         # Axes
         self.axis_x = QGraphicsLineItem()

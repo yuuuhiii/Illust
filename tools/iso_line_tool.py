@@ -26,6 +26,9 @@ class DrawIsoLineTool(BaseTool):
             self.start_pos = scene_pos
             thickness, arrow_type, arrow_pos, color, opacity, _, _, _ = self.get_props_func()
             self.preview_item = IsoLineItem(length=1, thickness=thickness, arrow_type=arrow_type, arrow_pos=arrow_pos, base_color=color, opacity=opacity)
+            self.preview_item.SNAP_ENABLED = False
+            self.preview_item.SNAP_ENABLED = False
+            self.preview_item.SNAP_ENABLED = False
             self.view.scene.addItem(self.preview_item)
             self.preview_item.setPos(scene_pos)
         else:
