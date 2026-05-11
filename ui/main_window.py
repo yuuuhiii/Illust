@@ -2,7 +2,7 @@ from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QDialog, QDialogButtonBox, QFormLayout,
                              QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea)
 from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPointF
 
 from PyQt6.QtWidgets import QLineEdit
 from canvas.view import CanvasView
@@ -329,9 +329,6 @@ class MainWindow(QMainWindow):
             self.update_color_btn_style()
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
-        elif selected and isinstance(selected[0], IsoPolylineItem):
-            item = selected[0]
-            item.update_geometry(thickness=self.spin_poly_thickness.value(), base_color=self.current_color, opacity=self.spin_opacity.value())
         elif selected and isinstance(selected[0], IsoTextItem):
             self.prop_stack.setCurrentIndex(4)
             item = selected[0]
@@ -382,15 +379,6 @@ class MainWindow(QMainWindow):
                                  rot_x=self.spin_rot_x.value(),
                                  rot_y=self.spin_rot_y.value(),
                                  rot_z=self.spin_rot_z.value())
-        elif selected and isinstance(selected[0], IsoPolylineItem):
-            self.prop_stack.setCurrentIndex(5)
-            item = selected[0]
-            self.spin_poly_thickness.blockSignals(True); self.spin_poly_thickness.setValue(int(item.thickness)); self.spin_poly_thickness.blockSignals(False)
-            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
-            self.current_color = item.base_color
-            self.update_color_btn_style()
-            if item in self.canvas.block_list:
-                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
         elif selected and isinstance(selected[0], IsoPolylineItem):
             item = selected[0]
             item.update_geometry(thickness=self.spin_poly_thickness.value(), base_color=self.current_color, opacity=self.spin_opacity.value())
