@@ -122,3 +122,11 @@ class IsoShapeItem(QGraphicsItemGroup):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
+
+    def clone(self):
+        new_item = IsoShapeItem(shape_type=self.shape_type, size=self.size, base_color=self.base_color, opacity=self.opacity_val)
+        new_item.rot_x = self.rot_x
+        new_item.rot_y = self.rot_y
+        new_item.rot_z = self.rot_z
+        new_item.update_geometry()
+        return new_item

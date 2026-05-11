@@ -2,18 +2,19 @@ import math
 from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
 from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
 from PyQt6.QtCore import Qt, QPointF
-from items.math3d import rotate_3d, project_iso, compute_normal
+from items.math3d import rotate_3d, project_iso, compute_normal, generate_sphere, generate_cylinder_vertical
 
 class IsoBlockItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
     GRID_SIZE = 10
 
-    def __init__(self, w=150, d=100, h=40, base_color=QColor(200, 200, 210), opacity=100):
+    def __init__(self, block_type="box", w=150, d=100, h=40, base_color=QColor(200, 200, 210), opacity=100):
         super().__init__()
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemSendsGeometryChanges)
 
+        self.block_type = block_type
         self.w, self.d, self.h = w, d, h
         self.base_color = base_color
         self.opacity_val = opacity
@@ -170,9 +171,10 @@ class IsoBlockItem(QGraphicsItemGroup):
 
         return rot_faces
 
-    def update_geometry(self, w=None, d=None, h=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
+    def update_geometry(self, block_type=None, w=None, d=None, h=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
         self.prepareGeometryChange()
 
+        if block_type is not None: self.block_type = block_type
         if w is not None: self.w = w
         if d is not None: self.d = d
         if h is not None: self.h = h
@@ -255,3 +257,11 @@ class IsoBlockItem(QGraphicsItemGroup):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
+
+    def clone(self):
+        new_item = IsoBlockItem(block_type=self.block_type, w=self.w, d=self.d, h=self.h, base_color=self.base_color, opacity=self.opacity_val)
+        new_item.rot_x = self.rot_x
+        new_item.rot_y = self.rot_y
+        new_item.rot_z = self.rot_z
+        new_item.update_geometry()
+        return new_item

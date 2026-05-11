@@ -1,4 +1,5 @@
-from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton,
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QDialog, QDialogButtonBox, QFormLayout,
                              QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea)
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
@@ -10,6 +11,8 @@ from tools.iso_tool import DrawIsoBlockTool
 from tools.iso_line_tool import DrawIsoLineTool
 from tools.iso_shape_tool import DrawIsoShapeTool
 from tools.iso_text_tool import DrawIsoTextTool
+from tools.iso_polyline_tool import DrawIsoPolylineTool
+from items.iso_polyline import IsoPolylineItem
 from items.iso_block import IsoBlockItem
 from items.iso_line import IsoLineItem
 from items.iso_shape import IsoShapeItem
@@ -24,6 +27,13 @@ class MainWindow(QMainWindow):
         main_layout = QHBoxLayout()
         self.canvas = CanvasView()
         self.canvas.scene.selectionChanged.connect(self.sync_ui_to_selection)
+
+        # Shortcuts
+        self.shortcut_copy = QShortcut(QKeySequence.StandardKey.Copy, self)
+        self.shortcut_copy.activated.connect(self.copy_item)
+        self.shortcut_paste = QShortcut(QKeySequence.StandardKey.Paste, self)
+        self.shortcut_paste.activated.connect(self.paste_item)
+        self.copied_item = None
 
         panel_layout = QVBoxLayout()
 
@@ -43,11 +53,15 @@ class MainWindow(QMainWindow):
         btn_draw_text = QPushButton("3Dテキストツール")
         btn_draw_text.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoTextTool(self.canvas, self.get_text_props)))
 
+        btn_draw_polyline = QPushButton("2D折れ線ツール")
+        btn_draw_polyline.clicked.connect(lambda: self.canvas.tool_manager.set_tool(DrawIsoPolylineTool(self.canvas, self.get_polyline_props)))
+
         panel_layout.addWidget(btn_select)
         panel_layout.addWidget(btn_draw_iso)
         panel_layout.addWidget(btn_draw_line)
         panel_layout.addWidget(btn_draw_shape)
         panel_layout.addWidget(btn_draw_text)
+        panel_layout.addWidget(btn_draw_polyline)
         
         self.cb_snap = QCheckBox("グリッドにスナップ")
         self.cb_snap.setChecked(True)
@@ -81,6 +95,17 @@ class MainWindow(QMainWindow):
         w_block = QWidget()
         l_block = QVBoxLayout(w_block)
         l_block.setContentsMargins(0, 0, 0, 0)
+
+        h_layout_block_type = QHBoxLayout()
+        h_layout_block_type.addWidget(QLabel("形状:"))
+        self.combo_block_type = QComboBox()
+        self.combo_block_type.addItem("直方体", "box")
+        self.combo_block_type.addItem("円柱", "cylinder")
+        self.combo_block_type.addItem("球体", "sphere")
+        self.combo_block_type.currentIndexChanged.connect(self.update_selected_item)
+        h_layout_block_type.addWidget(self.combo_block_type)
+        l_block.addLayout(h_layout_block_type)
+
         self.spin_w = create_spinbox_layout("幅 (W):", 10, 500, 200, layout=l_block)
         self.spin_d = create_spinbox_layout("奥行き (D):", 10, 500, 120, layout=l_block)
         self.spin_h = create_spinbox_layout("高さ (H):", 1, 500, 30, step=1, layout=l_block)
@@ -150,6 +175,13 @@ class MainWindow(QMainWindow):
         l_text.addLayout(h_layout_plane)
         self.prop_stack.addWidget(w_text)
 
+        # 5. Polyline Props
+        w_polyline = QWidget()
+        l_polyline = QVBoxLayout(w_polyline)
+        l_polyline.setContentsMargins(0, 0, 0, 0)
+        self.spin_poly_thickness = create_spinbox_layout("線の太さ:", 1, 100, 2, step=1, layout=l_polyline)
+        self.prop_stack.addWidget(w_polyline)
+
         panel_layout.addWidget(self.prop_stack)
 
         panel_layout.addWidget(QLabel("<b>【共通・回転・色】</b>"))
@@ -173,6 +205,7 @@ class MainWindow(QMainWindow):
         btn_draw_line.clicked.connect(lambda: self.prop_stack.setCurrentIndex(2))
         btn_draw_shape.clicked.connect(lambda: self.prop_stack.setCurrentIndex(3))
         btn_draw_text.clicked.connect(lambda: self.prop_stack.setCurrentIndex(4))
+        btn_draw_polyline.clicked.connect(lambda: self.prop_stack.setCurrentIndex(5))
         btn_select.clicked.connect(lambda: self.sync_ui_to_selection())
         
         panel_layout.addSpacing(20)
@@ -194,6 +227,10 @@ class MainWindow(QMainWindow):
         btn_delete = QPushButton("削除 (Del)")
         btn_delete.clicked.connect(self.delete_selected)
         panel_layout.addWidget(btn_delete)
+
+        btn_array = QPushButton("配列複製")
+        btn_array.clicked.connect(self.show_array_duplicate_dialog)
+        panel_layout.addWidget(btn_array)
 
         panel_widget = QWidget()
         panel_widget.setLayout(panel_layout)
@@ -226,6 +263,9 @@ class MainWindow(QMainWindow):
         if selected and isinstance(selected[0], IsoBlockItem):
             self.prop_stack.setCurrentIndex(1)
             item = selected[0]
+            idx = self.combo_block_type.findData(item.block_type)
+            if idx >= 0:
+                self.combo_block_type.blockSignals(True); self.combo_block_type.setCurrentIndex(idx); self.combo_block_type.blockSignals(False)
             self.spin_w.blockSignals(True); self.spin_w.setValue(item.w); self.spin_w.blockSignals(False)
             self.spin_d.blockSignals(True); self.spin_d.setValue(item.d); self.spin_d.blockSignals(False)
             self.spin_h.blockSignals(True); self.spin_h.setValue(item.h); self.spin_h.blockSignals(False)
@@ -280,6 +320,18 @@ class MainWindow(QMainWindow):
 
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoPolylineItem):
+            self.prop_stack.setCurrentIndex(5)
+            item = selected[0]
+            self.spin_poly_thickness.blockSignals(True); self.spin_poly_thickness.setValue(int(item.thickness)); self.spin_poly_thickness.blockSignals(False)
+            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+            self.current_color = item.base_color
+            self.update_color_btn_style()
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoPolylineItem):
+            item = selected[0]
+            item.update_geometry(thickness=self.spin_poly_thickness.value(), base_color=self.current_color, opacity=self.spin_opacity.value())
         elif selected and isinstance(selected[0], IsoTextItem):
             self.prop_stack.setCurrentIndex(4)
             item = selected[0]
@@ -303,7 +355,8 @@ class MainWindow(QMainWindow):
         selected = self.canvas.scene.selectedItems()
         if selected and isinstance(selected[0], IsoBlockItem):
             item = selected[0]
-            item.update_geometry(w=self.spin_w.value(), d=self.spin_d.value(), 
+            item.update_geometry(block_type=self.combo_block_type.currentData(),
+                                 w=self.spin_w.value(), d=self.spin_d.value(),
                                  h=self.spin_h.value(), base_color=self.current_color,
                                  opacity=self.spin_opacity.value(),
                                  rot_x=self.spin_rot_x.value(),
@@ -329,6 +382,18 @@ class MainWindow(QMainWindow):
                                  rot_x=self.spin_rot_x.value(),
                                  rot_y=self.spin_rot_y.value(),
                                  rot_z=self.spin_rot_z.value())
+        elif selected and isinstance(selected[0], IsoPolylineItem):
+            self.prop_stack.setCurrentIndex(5)
+            item = selected[0]
+            self.spin_poly_thickness.blockSignals(True); self.spin_poly_thickness.setValue(int(item.thickness)); self.spin_poly_thickness.blockSignals(False)
+            self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
+            self.current_color = item.base_color
+            self.update_color_btn_style()
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoPolylineItem):
+            item = selected[0]
+            item.update_geometry(thickness=self.spin_poly_thickness.value(), base_color=self.current_color, opacity=self.spin_opacity.value())
         elif selected and isinstance(selected[0], IsoTextItem):
             item = selected[0]
             item.update_geometry(text=self.line_text.text(),
@@ -348,13 +413,16 @@ class MainWindow(QMainWindow):
         self.btn_color.setStyleSheet(f"background-color: {self.current_color.name()}; border: 1px solid gray; padding: 5px;")
 
     def get_block_props(self):
-        return self.spin_w.value(), self.spin_d.value(), self.spin_h.value(), self.current_color, self.spin_opacity.value()
+        return self.combo_block_type.currentData(), self.spin_w.value(), self.spin_d.value(), self.spin_h.value(), self.current_color, self.spin_opacity.value()
 
     def get_line_props(self):
         return self.spin_thickness.value(), self.combo_arrow_type.currentData(), self.combo_arrow_pos.currentData(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
 
     def get_shape_props(self):
         return self.combo_shape_type.currentData(), self.spin_shape_size.value(), self.current_color, self.spin_opacity.value(), self.spin_rot_x.value(), self.spin_rot_y.value(), self.spin_rot_z.value()
+
+    def get_polyline_props(self):
+        return self.spin_poly_thickness.value(), self.current_color, self.spin_opacity.value()
 
     def get_text_props(self):
         return self.line_text.text(), self.spin_font_size.value(), self.combo_plane.currentData(), self.current_color, self.spin_opacity.value()
@@ -379,3 +447,73 @@ class MainWindow(QMainWindow):
         if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
             self.delete_selected()
         super().keyPressEvent(event)
+
+    def copy_item(self):
+        selected = self.canvas.scene.selectedItems()
+        if selected:
+            self.copied_item = selected[0]
+
+    def paste_item(self):
+        if self.copied_item:
+            try:
+                new_item = self.copied_item.clone()
+                # Offset slightly so it's visible
+                offset_pos = self.copied_item.pos() + QPointF(20, 20)
+                self.canvas.add_block(new_item, offset_pos)
+                self.canvas.scene.clearSelection()
+                new_item.setSelected(True)
+            except AttributeError:
+                pass # Item might not have clone method
+
+    def show_array_duplicate_dialog(self):
+        selected = self.canvas.scene.selectedItems()
+        if not selected:
+            return
+        item = selected[0]
+        if not hasattr(item, 'clone'):
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("配列複製")
+        layout = QFormLayout(dialog)
+
+        spin_nx = QSpinBox(); spin_nx.setRange(1, 100); spin_nx.setValue(1)
+        spin_ny = QSpinBox(); spin_ny.setRange(1, 100); spin_ny.setValue(1)
+        spin_nz = QSpinBox(); spin_nz.setRange(1, 100); spin_nz.setValue(1)
+
+        spin_dx = QSpinBox(); spin_dx.setRange(-1000, 1000); spin_dx.setValue(150); spin_dx.setSingleStep(10)
+        spin_dy = QSpinBox(); spin_dy.setRange(-1000, 1000); spin_dy.setValue(100); spin_dy.setSingleStep(10)
+        spin_dz = QSpinBox(); spin_dz.setRange(-1000, 1000); spin_dz.setValue(0); spin_dz.setSingleStep(10)
+
+        layout.addRow("X方向の個数:", spin_nx)
+        layout.addRow("Y方向の個数:", spin_ny)
+        layout.addRow("Z方向の個数:", spin_nz)
+        layout.addRow("X方向の間隔:", spin_dx)
+        layout.addRow("Y方向の間隔:", spin_dy)
+        layout.addRow("Z方向の間隔:", spin_dz)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            from items.math3d import project_iso
+            base_pos = item.scenePos()
+
+            for ix in range(spin_nx.value()):
+                for iy in range(spin_ny.value()):
+                    for iz in range(spin_nz.value()):
+                        if ix == 0 and iy == 0 and iz == 0:
+                            continue # Skip original
+
+                        # Calculate 3D offset
+                        off_x = ix * spin_dx.value()
+                        off_y = iy * spin_dy.value()
+                        off_z = iz * spin_dz.value()
+
+                        # Project offset to screen space
+                        sx, sy = project_iso(off_x, off_y, off_z)
+
+                        new_item = item.clone()
+                        self.canvas.add_block(new_item, base_pos + QPointF(sx, sy))
