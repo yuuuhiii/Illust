@@ -17,8 +17,8 @@ class DrawIsoBlockTool(BaseTool):
             y = round(scene_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
             scene_pos = QPointF(x, y)
 
-        w, d, h, color, opacity = self.get_props_func()
-        block = IsoBlockItem(w=w, d=d, h=h, base_color=color, opacity=opacity)
+        block_type, w, d, h, color, opacity = self.get_props_func()
+        block = IsoBlockItem(block_type=block_type, w=w, d=d, h=h, base_color=color, opacity=opacity)
         
         # キャンバス側の配列に登録させるために add_block を呼ぶ
         self.view.add_block(block, scene_pos)

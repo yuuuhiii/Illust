@@ -118,3 +118,8 @@ class IsoTextItem(QGraphicsItemGroup):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
+
+    def clone(self):
+        new_item = IsoTextItem(text=self.text, font_size=self.font_size, plane=self.plane, base_color=self.base_color, opacity=self.opacity_val)
+        new_item.update_geometry()
+        return new_item
