@@ -105,6 +105,14 @@ class IsoBlockItem(QGraphicsItemGroup):
         if w is not None: self.w = w
         if d is not None: self.d = d
         if h is not None: self.h = h
+
+        # Enforce shape dimensions based on type
+        if self.block_type == "cylinder":
+            self.d = self.w
+        elif self.block_type == "sphere":
+            self.d = self.w
+            self.h = self.w
+
         if base_color is not None: self.base_color = base_color
         if opacity is not None: self.opacity_val = max(10, min(100, opacity))
         if rot_x is not None: self.rot_x = rot_x

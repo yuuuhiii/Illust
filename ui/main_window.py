@@ -74,7 +74,8 @@ class MainWindow(QMainWindow):
         
         def create_spinbox_layout(label, min_v, max_v, default_v, step=10, layout=None):
             h_layout = QHBoxLayout()
-            h_layout.addWidget(QLabel(label))
+            lbl = QLabel(label)
+            h_layout.addWidget(lbl)
             spin = QSpinBox()
             spin.setRange(min_v, max_v)
             spin.setValue(default_v)
@@ -83,7 +84,7 @@ class MainWindow(QMainWindow):
             h_layout.addWidget(spin)
             if layout is not None:
                 layout.addLayout(h_layout)
-            return spin
+            return spin, lbl, h_layout
 
         self.prop_stack = QStackedWidget()
 
@@ -106,17 +107,19 @@ class MainWindow(QMainWindow):
         h_layout_block_type.addWidget(self.combo_block_type)
         l_block.addLayout(h_layout_block_type)
 
-        self.spin_w = create_spinbox_layout("幅 (W):", 10, 500, 200, layout=l_block)
-        self.spin_d = create_spinbox_layout("奥行き (D):", 10, 500, 120, layout=l_block)
-        self.spin_h = create_spinbox_layout("高さ (H):", 1, 500, 30, step=1, layout=l_block)
+        self.spin_w, self.lbl_w, self.hl_w = create_spinbox_layout("幅 (W):", 10, 500, 200, layout=l_block)
+        self.spin_d, self.lbl_d, self.hl_d = create_spinbox_layout("奥行き (D):", 10, 500, 120, layout=l_block)
+        self.spin_h, self.lbl_h, self.hl_h = create_spinbox_layout("高さ (H):", 1, 500, 30, step=1, layout=l_block)
         self.prop_stack.addWidget(w_block)
+
+        self.combo_block_type.currentIndexChanged.connect(self.update_block_labels)
 
         # 2. Line/Arrow Props
         w_line = QWidget()
         l_line = QVBoxLayout(w_line)
         l_line.setContentsMargins(0, 0, 0, 0)
-        self.spin_length = create_spinbox_layout("長さ (L):", 1, 1000, 100, step=10, layout=l_line)
-        self.spin_thickness = create_spinbox_layout("線の太さ:", 1, 100, 10, step=1, layout=l_line)
+        self.spin_length, _, _ = create_spinbox_layout("長さ (L):", 1, 1000, 100, step=10, layout=l_line)
+        self.spin_thickness, _, _ = create_spinbox_layout("線の太さ:", 1, 100, 10, step=1, layout=l_line)
 
         h_layout_arrow = QHBoxLayout()
         h_layout_arrow.addWidget(QLabel("矢印の形:"))
@@ -151,7 +154,7 @@ class MainWindow(QMainWindow):
         self.combo_shape_type.currentIndexChanged.connect(self.update_selected_item)
         h_layout_shape.addWidget(self.combo_shape_type)
         l_shape.addLayout(h_layout_shape)
-        self.spin_shape_size = create_spinbox_layout("サイズ:", 10, 1000, 100, step=10, layout=l_shape)
+        self.spin_shape_size, _, _ = create_spinbox_layout("サイズ:", 10, 1000, 100, step=10, layout=l_shape)
         self.prop_stack.addWidget(w_shape)
 
         # 4. Text Props
@@ -161,7 +164,7 @@ class MainWindow(QMainWindow):
         self.line_text = QLineEdit("Text")
         self.line_text.textChanged.connect(self.update_selected_item)
         l_text.addWidget(self.line_text)
-        self.spin_font_size = create_spinbox_layout("フォントサイズ:", 5, 200, 30, step=5, layout=l_text)
+        self.spin_font_size, _, _ = create_spinbox_layout("フォントサイズ:", 5, 200, 30, step=5, layout=l_text)
 
         h_layout_plane = QHBoxLayout()
         h_layout_plane.addWidget(QLabel("配置面:"))
@@ -179,20 +182,20 @@ class MainWindow(QMainWindow):
         w_polyline = QWidget()
         l_polyline = QVBoxLayout(w_polyline)
         l_polyline.setContentsMargins(0, 0, 0, 0)
-        self.spin_poly_thickness = create_spinbox_layout("線の太さ:", 1, 100, 2, step=1, layout=l_polyline)
+        self.spin_poly_thickness, _, _ = create_spinbox_layout("線の太さ:", 1, 100, 2, step=1, layout=l_polyline)
         self.prop_stack.addWidget(w_polyline)
 
         panel_layout.addWidget(self.prop_stack)
 
         panel_layout.addWidget(QLabel("<b>【共通・回転・色】</b>"))
 
-        self.spin_opacity = create_spinbox_layout("透過率 (%):", 10, 100, 100, layout=panel_layout)
+        self.spin_opacity, _, _ = create_spinbox_layout("透過率 (%):", 10, 100, 100, layout=panel_layout)
 
-        self.spin_rot_x = create_spinbox_layout("回転 X:", 0, 359, 0, step=5, layout=panel_layout)
+        self.spin_rot_x, _, _ = create_spinbox_layout("回転 X:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_x.setWrapping(True)
-        self.spin_rot_y = create_spinbox_layout("回転 Y:", 0, 359, 0, step=5, layout=panel_layout)
+        self.spin_rot_y, _, _ = create_spinbox_layout("回転 Y:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_y.setWrapping(True)
-        self.spin_rot_z = create_spinbox_layout("回転 Z:", 0, 359, 0, step=5, layout=panel_layout)
+        self.spin_rot_z, _, _ = create_spinbox_layout("回転 Z:", 0, 359, 0, step=5, layout=panel_layout)
         self.spin_rot_z.setWrapping(True)
 
         self.current_color = QColor(150, 170, 220)
@@ -253,6 +256,27 @@ class MainWindow(QMainWindow):
         IsoShapeItem.SNAP_ENABLED = (state == 2)
         IsoTextItem.SNAP_ENABLED = (state == 2)
 
+    def update_block_labels(self):
+        btype = self.combo_block_type.currentData()
+        if btype == "box":
+            self.lbl_w.setText("幅 (W):")
+            self.lbl_w.show(); self.spin_w.show()
+            self.lbl_d.setText("奥行き (D):")
+            self.lbl_d.show(); self.spin_d.show()
+            self.lbl_h.setText("高さ (H):")
+            self.lbl_h.show(); self.spin_h.show()
+        elif btype == "cylinder":
+            self.lbl_w.setText("直径:")
+            self.lbl_w.show(); self.spin_w.show()
+            self.lbl_d.hide(); self.spin_d.hide()
+            self.lbl_h.setText("厚さ/高さ:")
+            self.lbl_h.show(); self.spin_h.show()
+        elif btype == "sphere":
+            self.lbl_w.setText("直径:")
+            self.lbl_w.show(); self.spin_w.show()
+            self.lbl_d.hide(); self.spin_d.hide()
+            self.lbl_h.hide(); self.spin_h.hide()
+
     def sync_ui_to_selection(self):
         selected = self.canvas.scene.selectedItems()
         if not selected:
@@ -266,6 +290,7 @@ class MainWindow(QMainWindow):
             idx = self.combo_block_type.findData(item.block_type)
             if idx >= 0:
                 self.combo_block_type.blockSignals(True); self.combo_block_type.setCurrentIndex(idx); self.combo_block_type.blockSignals(False)
+                self.update_block_labels()
             self.spin_w.blockSignals(True); self.spin_w.setValue(item.w); self.spin_w.blockSignals(False)
             self.spin_d.blockSignals(True); self.spin_d.setValue(item.d); self.spin_d.blockSignals(False)
             self.spin_h.blockSignals(True); self.spin_h.setValue(item.h); self.spin_h.blockSignals(False)
@@ -485,23 +510,67 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            from items.math3d import project_iso
-            base_pos = item.scenePos()
+        preview_items = []
+        base_pos = item.scenePos()
 
+        def update_preview():
+            # Clear old previews
+            for p_item in preview_items:
+                self.canvas.scene.removeItem(p_item)
+            preview_items.clear()
+
+            from items.math3d import project_iso
             for ix in range(spin_nx.value()):
                 for iy in range(spin_ny.value()):
                     for iz in range(spin_nz.value()):
                         if ix == 0 and iy == 0 and iz == 0:
-                            continue # Skip original
+                            continue
 
-                        # Calculate 3D offset
                         off_x = ix * spin_dx.value()
                         off_y = iy * spin_dy.value()
                         off_z = iz * spin_dz.value()
 
-                        # Project offset to screen space
                         sx, sy = project_iso(off_x, off_y, off_z)
 
+                        p_item = item.clone()
+                        # Set to semi-transparent to indicate it's a preview
+                        p_item.setOpacity(item.opacity() * 0.5)
+                        p_item.setFlag(p_item.GraphicsItemFlag.ItemIsSelectable, False)
+                        p_item.setFlag(p_item.GraphicsItemFlag.ItemIsMovable, False)
+
+                        self.canvas.scene.addItem(p_item)
+                        p_item.setPos(base_pos + QPointF(sx, sy))
+                        preview_items.append(p_item)
+
+        # Connect signals for live preview
+        spin_nx.valueChanged.connect(lambda: update_preview())
+        spin_ny.valueChanged.connect(lambda: update_preview())
+        spin_nz.valueChanged.connect(lambda: update_preview())
+        spin_dx.valueChanged.connect(lambda: update_preview())
+        spin_dy.valueChanged.connect(lambda: update_preview())
+        spin_dz.valueChanged.connect(lambda: update_preview())
+
+        update_preview()
+
+        result = dialog.exec()
+
+        # Cleanup previews
+        for p_item in preview_items:
+            self.canvas.scene.removeItem(p_item)
+        preview_items.clear()
+
+        if result == QDialog.DialogCode.Accepted:
+            from items.math3d import project_iso
+            for ix in range(spin_nx.value()):
+                for iy in range(spin_ny.value()):
+                    for iz in range(spin_nz.value()):
+                        if ix == 0 and iy == 0 and iz == 0:
+                            continue
+
+                        off_x = ix * spin_dx.value()
+                        off_y = iy * spin_dy.value()
+                        off_z = iz * spin_dz.value()
+
+                        sx, sy = project_iso(off_x, off_y, off_z)
                         new_item = item.clone()
                         self.canvas.add_block(new_item, base_pos + QPointF(sx, sy))
