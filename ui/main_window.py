@@ -520,6 +520,8 @@ class MainWindow(QMainWindow):
             preview_items.clear()
 
             from items.math3d import project_iso
+            preview_data = []
+
             for ix in range(spin_nx.value()):
                 for iy in range(spin_ny.value()):
                     for iz in range(spin_nz.value()):
@@ -531,16 +533,30 @@ class MainWindow(QMainWindow):
                         off_z = iz * spin_dz.value()
 
                         sx, sy = project_iso(off_x, off_y, off_z)
+                        depth = off_x + off_y - off_z
 
-                        p_item = item.clone()
-                        # Set to semi-transparent to indicate it's a preview
-                        p_item.setOpacity(item.opacity() * 0.5)
-                        p_item.setFlag(p_item.GraphicsItemFlag.ItemIsSelectable, False)
-                        p_item.setFlag(p_item.GraphicsItemFlag.ItemIsMovable, False)
+                        preview_data.append({
+                            'sx': sx, 'sy': sy, 'depth': depth
+                        })
 
-                        self.canvas.scene.addItem(p_item)
-                        p_item.setPos(base_pos + QPointF(sx, sy))
-                        preview_items.append(p_item)
+            preview_data.sort(key=lambda d: d['depth'])
+            base_z = item.zValue()
+
+            for i, data in enumerate(preview_data):
+                p_item = item.clone()
+                p_item.setOpacity(item.opacity_val * 0.5)
+                p_item.setFlag(p_item.GraphicsItemFlag.ItemIsSelectable, False)
+                p_item.setFlag(p_item.GraphicsItemFlag.ItemIsMovable, False)
+
+                self.canvas.scene.addItem(p_item)
+                p_item.setPos(base_pos + QPointF(data['sx'], data['sy']))
+
+                if data['depth'] >= 0:
+                    p_item.setZValue(base_z + 0.001 * (i + 1))
+                else:
+                    p_item.setZValue(base_z - 0.001 * (len(preview_data) - i))
+
+                preview_items.append(p_item)
 
         # Connect signals for live preview
         spin_nx.valueChanged.connect(lambda: update_preview())
@@ -561,6 +577,9 @@ class MainWindow(QMainWindow):
 
         if result == QDialog.DialogCode.Accepted:
             from items.math3d import project_iso
+
+            new_items_data = []
+
             for ix in range(spin_nx.value()):
                 for iy in range(spin_ny.value()):
                     for iz in range(spin_nz.value()):
@@ -572,5 +591,44 @@ class MainWindow(QMainWindow):
                         off_z = iz * spin_dz.value()
 
                         sx, sy = project_iso(off_x, off_y, off_z)
-                        new_item = item.clone()
-                        self.canvas.add_block(new_item, base_pos + QPointF(sx, sy))
+                        depth = off_x + off_y - off_z
+                        new_items_data.append({
+                            'sx': sx, 'sy': sy, 'depth': depth
+                        })
+
+            # Sort newly created items by depth
+            new_items_data.sort(key=lambda d: d['depth'])
+
+            # Extract items that are behind the original (depth < 0) and in front (depth >= 0)
+            items_behind = [d for d in new_items_data if d['depth'] < 0]
+            items_front = [d for d in new_items_data if d['depth'] >= 0]
+
+            idx = self.canvas.block_list.index(item) if item in self.canvas.block_list else -1
+
+            if idx >= 0:
+                self.canvas.block_list.remove(item)
+
+                # Insert items behind, then the original, then items in front
+                for data in items_behind:
+                    new_item = item.clone()
+                    self.canvas.scene.addItem(new_item)
+                    new_item.setPos(base_pos + QPointF(data['sx'], data['sy']))
+                    self.canvas.block_list.insert(idx, new_item)
+                    idx += 1
+
+                self.canvas.block_list.insert(idx, item)
+                idx += 1
+
+                for data in items_front:
+                    new_item = item.clone()
+                    self.canvas.scene.addItem(new_item)
+                    new_item.setPos(base_pos + QPointF(data['sx'], data['sy']))
+                    self.canvas.block_list.insert(idx, new_item)
+                    idx += 1
+
+                self.canvas.update_z_values()
+            else:
+                # Fallback if somehow not in block_list
+                for data in new_items_data:
+                    new_item = item.clone()
+                    self.canvas.add_block(new_item, base_pos + QPointF(data['sx'], data['sy']))
