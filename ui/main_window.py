@@ -1,9 +1,8 @@
-import json
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QDialog, QDialogButtonBox, QFormLayout,
-                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea, QFileDialog, QMessageBox)
-from PyQt6.QtGui import QColor, QImage, QPainter
-from PyQt6.QtCore import Qt, QPointF, QRectF
+                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea)
+from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QPointF
 
 from PyQt6.QtWidgets import QLineEdit
 from canvas.view import CanvasView
@@ -37,21 +36,6 @@ class MainWindow(QMainWindow):
         self.copied_item = None
 
         panel_layout = QVBoxLayout()
-
-        panel_layout.addWidget(QLabel("<b>【ファイル操作】</b>"))
-        btn_export = QPushButton("画像を保存")
-        btn_export.clicked.connect(self.export_image)
-        btn_save = QPushButton("データ保存")
-        btn_save.clicked.connect(self.save_data)
-        btn_load = QPushButton("データ読込")
-        btn_load.clicked.connect(self.load_data)
-
-        h_file = QHBoxLayout()
-        h_file.addWidget(btn_save)
-        h_file.addWidget(btn_load)
-        panel_layout.addLayout(h_file)
-        panel_layout.addWidget(btn_export)
-        panel_layout.addSpacing(20)
 
         panel_layout.addWidget(QLabel("<b>【ツール】</b>"))
         btn_select = QPushButton("選択・移動ツール")
@@ -555,10 +539,23 @@ class MainWindow(QMainWindow):
                             'sx': sx, 'sy': sy, 'depth': depth
                         })
 
+            # Add the original item to the mix for purely numerical sorting
+            preview_data.append({'sx': 0, 'sy': 0, 'depth': 0, 'is_orig': True})
             preview_data.sort(key=lambda d: d['depth'])
+
             base_z = item.zValue()
 
+            # Find the original item's rank
+            orig_index = 0
+            for i, d in enumerate(preview_data):
+                if d.get('is_orig'):
+                    orig_index = i
+                    break
+
             for i, data in enumerate(preview_data):
+                if data.get('is_orig'):
+                    continue
+
                 p_item = item.clone()
                 p_item.setOpacity(item.opacity_val * 0.5)
                 p_item.setFlag(p_item.GraphicsItemFlag.ItemIsSelectable, False)
@@ -567,10 +564,9 @@ class MainWindow(QMainWindow):
                 self.canvas.scene.addItem(p_item)
                 p_item.setPos(base_pos + QPointF(data['sx'], data['sy']))
 
-                if data['depth'] >= 0:
-                    p_item.setZValue(base_z + 0.001 * (i + 1))
-                else:
-                    p_item.setZValue(base_z - 0.001 * (len(preview_data) - i))
+                # Z index offsets around base_z
+                z_offset = (i - orig_index) * 0.001
+                p_item.setZValue(base_z + z_offset)
 
                 preview_items.append(p_item)
 
@@ -607,197 +603,34 @@ class MainWindow(QMainWindow):
                         off_z = iz * spin_dz.value()
 
                         sx, sy = project_iso(off_x, off_y, off_z)
+                        depth = off_x + off_y - off_z
+                        new_items_data.append({
+                            'sx': sx, 'sy': sy, 'depth': depth
+                        })
+
+            # Add original to the data list to sort everything together
+            new_items_data.append({'sx': 0, 'sy': 0, 'depth': 0, 'is_orig': True})
+            new_items_data.sort(key=lambda d: d['depth'])
+
+            idx = self.canvas.block_list.index(item) if item in self.canvas.block_list else -1
+
+            if idx >= 0:
+                self.canvas.block_list.remove(item)
+
+                for data in new_items_data:
+                    if data.get('is_orig'):
+                        self.canvas.block_list.insert(idx, item)
+                        idx += 1
+                    else:
                         new_item = item.clone()
-                        self.canvas.add_block(new_item, base_pos + QPointF(sx, sy))
+                        self.canvas.scene.addItem(new_item)
+                        new_item.setPos(base_pos + QPointF(data['sx'], data['sy']))
+                        self.canvas.block_list.insert(idx, new_item)
+                        idx += 1
 
-    def export_image(self):
-        file_name, filt = QFileDialog.getSaveFileName(
-            self, "画像を保存", "", "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;GIF Image (*.gif)"
-        )
-        if not file_name:
-            return
-
-        # Use itemsBoundingRect if we have items, otherwise just a default small rect or view rect.
-        rect = self.canvas.scene.itemsBoundingRect()
-        if rect.isEmpty():
-            QMessageBox.information(self, "情報", "保存するアイテムがありません。")
-            return
-
-        # Add some margin
-        margin = 20
-        rect = rect.adjusted(-margin, -margin, margin, margin)
-
-        image = QImage(rect.size().toSize(), QImage.Format.Format_ARGB32)
-        if filt.startswith("JPEG"):
-            image.fill(Qt.GlobalColor.white)
-        else:
-            image.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.canvas.scene.render(painter, target=QRectF(image.rect()), source=rect)
-        painter.end()
-
-        if file_name.lower().endswith(".gif"):
-            try:
-                import ctypes
-                from PIL import Image
-
-                # We need RGBA8888 for PIL
-                rgba_image = image.convertToFormat(QImage.Format.Format_RGBA8888)
-
-                # Fill white background for gif if originally transparent because gif doesn't support partial transparency well
-                # We could keep transparency, but it's simpler to do white
-                white_bg = QImage(rgba_image.size(), QImage.Format.Format_RGBA8888)
-                white_bg.fill(Qt.GlobalColor.white)
-                p = QPainter(white_bg)
-                p.drawImage(0, 0, rgba_image)
-                p.end()
-
-                ptr = white_bg.constBits()
-                ptr.setsize(white_bg.sizeInBytes())
-
-                pil_img = Image.frombytes("RGBA", (white_bg.width(), white_bg.height()), bytes(ptr))
-                pil_img = pil_img.convert("RGB").convert("P", palette=Image.ADAPTIVE)
-                pil_img.save(file_name, "GIF")
-                QMessageBox.information(self, "完了", "画像を保存しました。")
-            except ImportError:
-                QMessageBox.warning(self, "エラー", "GIF保存にはPillowライブラリが必要です。`pip install Pillow` を実行してください。")
-            except Exception as e:
-                QMessageBox.warning(self, "エラー", f"GIFの保存中にエラーが発生しました: {str(e)}")
-        else:
-            if image.save(file_name):
-                QMessageBox.information(self, "完了", "画像を保存しました。")
+                self.canvas.update_z_values()
             else:
-                QMessageBox.warning(self, "エラー", "画像の保存に失敗しました。")
-
-    def save_data(self):
-        file_name, _ = QFileDialog.getSaveFileName(self, "データ保存", "", "JSON Files (*.json)")
-        if not file_name:
-            return
-
-        data = []
-        for item in self.canvas.block_list:
-            pos = item.pos()
-            item_data = {
-                "x": pos.x(),
-                "y": pos.y(),
-                "opacity": getattr(item, "opacity_val", 100),
-                "rot_x": getattr(item, "rot_x", 0.0),
-                "rot_y": getattr(item, "rot_y", 0.0),
-                "rot_z": getattr(item, "rot_z", 0.0),
-            }
-            if hasattr(item, "base_color"):
-                item_data["color"] = item.base_color.name()
-
-            if isinstance(item, IsoBlockItem):
-                item_data["type"] = "IsoBlockItem"
-                item_data["block_type"] = item.block_type
-                item_data["w"] = item.w
-                item_data["d"] = item.d
-                item_data["h"] = item.h
-            elif isinstance(item, IsoLineItem):
-                item_data["type"] = "IsoLineItem"
-                item_data["length"] = item.length
-                item_data["thickness"] = item.thickness
-                item_data["arrow_type"] = item.arrow_type
-                item_data["arrow_pos"] = item.arrow_pos
-            elif isinstance(item, IsoShapeItem):
-                item_data["type"] = "IsoShapeItem"
-                item_data["shape_type"] = item.shape_type
-                item_data["size"] = item.size
-            elif isinstance(item, IsoTextItem):
-                item_data["type"] = "IsoTextItem"
-                item_data["text"] = item.text
-                item_data["font_size"] = item.font_size
-                item_data["plane"] = item.plane
-            elif isinstance(item, IsoPolylineItem):
-                item_data["type"] = "IsoPolylineItem"
-                item_data["thickness"] = item.thickness
-                item_data["points"] = [{"x": p.x(), "y": p.y()} for p in item.points]
-
-            data.append(item_data)
-
-        try:
-            with open(file_name, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            QMessageBox.information(self, "完了", "データを保存しました。")
-        except Exception as e:
-            QMessageBox.warning(self, "エラー", f"データの保存中にエラーが発生しました: {str(e)}")
-
-    def load_data(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "データ読込", "", "JSON Files (*.json)")
-        if not file_name:
-            return
-
-        try:
-            with open(file_name, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            QMessageBox.warning(self, "エラー", f"データの読み込み中にエラーが発生しました: {str(e)}")
-            return
-
-        # Clear current canvas
-        for item in list(self.canvas.block_list):
-            self.canvas.remove_block(item)
-        self.canvas.scene.clearSelection()
-
-        for item_data in data:
-            item_type = item_data.get("type")
-            if not item_type:
-                continue
-
-            color = QColor(item_data.get("color", "#000000"))
-            opacity = item_data.get("opacity", 100)
-
-            new_item = None
-            if item_type == "IsoBlockItem":
-                new_item = IsoBlockItem(
-                    block_type=item_data.get("block_type", "box"),
-                    w=item_data.get("w", 150),
-                    d=item_data.get("d", 100),
-                    h=item_data.get("h", 40),
-                    base_color=color,
-                    opacity=opacity
-                )
-            elif item_type == "IsoLineItem":
-                new_item = IsoLineItem(
-                    length=item_data.get("length", 100),
-                    thickness=item_data.get("thickness", 5),
-                    arrow_type=item_data.get("arrow_type", "flat"),
-                    arrow_pos=item_data.get("arrow_pos", "end"),
-                    base_color=color,
-                    opacity=opacity
-                )
-            elif item_type == "IsoShapeItem":
-                new_item = IsoShapeItem(
-                    shape_type=item_data.get("shape_type", "square"),
-                    size=item_data.get("size", 100),
-                    base_color=color,
-                    opacity=opacity
-                )
-            elif item_type == "IsoTextItem":
-                new_item = IsoTextItem(
-                    text=item_data.get("text", "Text"),
-                    font_size=item_data.get("font_size", 30),
-                    plane=item_data.get("plane", "XY"),
-                    base_color=color,
-                    opacity=opacity
-                )
-            elif item_type == "IsoPolylineItem":
-                pts = [QPointF(p["x"], p["y"]) for p in item_data.get("points", [])]
-                new_item = IsoPolylineItem(
-                    points=pts,
-                    thickness=item_data.get("thickness", 2),
-                    base_color=color,
-                    opacity=opacity
-                )
-
-            if new_item:
-                new_item.rot_x = item_data.get("rot_x", 0.0)
-                new_item.rot_y = item_data.get("rot_y", 0.0)
-                new_item.rot_z = item_data.get("rot_z", 0.0)
-                new_item.update_geometry()
-
-                pos = QPointF(item_data.get("x", 0.0), item_data.get("y", 0.0))
-                self.canvas.add_block(new_item, pos)
+                for data in new_items_data:
+                    if not data.get('is_orig'):
+                        new_item = item.clone()
+                        self.canvas.add_block(new_item, base_pos + QPointF(data['sx'], data['sy']))
