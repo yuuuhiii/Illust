@@ -200,3 +200,16 @@ class IsoBlockItem(QGraphicsItemGroup):
         new_item.rot_z = self.rot_z
         new_item.update_geometry()
         return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoBlockItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'block_type': self.block_type,
+            'w': self.w, 'd': self.d, 'h': self.h,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val,
+            'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
+        }

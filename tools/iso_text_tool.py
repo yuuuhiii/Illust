@@ -24,3 +24,10 @@ class DrawIsoTextTool(BaseTool):
 
         self.scene.clearSelection()
         text_item.setSelected(True)
+
+        # Auto-switch to SelectTool
+        from tools.select_tool import SelectTool
+        self.view.tool_manager.set_tool(SelectTool(self.view))
+        # Sync UI
+        if hasattr(self.view.window(), 'sync_ui_to_selection'):
+            self.view.window().sync_ui_to_selection()

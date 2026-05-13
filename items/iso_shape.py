@@ -130,3 +130,15 @@ class IsoShapeItem(QGraphicsItemGroup):
         new_item.rot_z = self.rot_z
         new_item.update_geometry()
         return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoShapeItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'shape_type': self.shape_type, 'size': self.size,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val,
+            'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
+        }

@@ -1,6 +1,8 @@
 from PyQt6.QtGui import QKeySequence, QShortcut
+import json
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QDialog, QDialogButtonBox, QFormLayout,
-                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea)
+                             QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea, QFileDialog)
+
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt, QPointF
 
@@ -28,12 +30,32 @@ class MainWindow(QMainWindow):
         self.canvas = CanvasView()
         self.canvas.scene.selectionChanged.connect(self.sync_ui_to_selection)
 
+        # History state
+        self.history = []
+        self.history_index = -1
+        self.is_undoing = False
+
         # Shortcuts
         self.shortcut_copy = QShortcut(QKeySequence.StandardKey.Copy, self)
         self.shortcut_copy.activated.connect(self.copy_item)
         self.shortcut_paste = QShortcut(QKeySequence.StandardKey.Paste, self)
         self.shortcut_paste.activated.connect(self.paste_item)
         self.copied_item = None
+
+        self.shortcut_undo = QShortcut(QKeySequence.StandardKey.Undo, self)
+        self.shortcut_undo.activated.connect(self.undo)
+
+        self.shortcut_select_all = QShortcut(QKeySequence.StandardKey.SelectAll, self)
+        self.shortcut_select_all.activated.connect(self.select_all)
+
+        self.shortcut_save = QShortcut(QKeySequence.StandardKey.Save, self)
+        self.shortcut_save.activated.connect(self.save_file)
+
+        self.shortcut_open = QShortcut(QKeySequence.StandardKey.Open, self)
+        self.shortcut_open.activated.connect(self.open_file)
+
+        # Save initial state
+        self.save_state()
 
         panel_layout = QVBoxLayout()
 
@@ -634,3 +656,108 @@ class MainWindow(QMainWindow):
                     if not data.get('is_orig'):
                         new_item = item.clone()
                         self.canvas.add_block(new_item, base_pos + QPointF(data['sx'], data['sy']))
+
+    def serialize_scene(self):
+        data = []
+        for item in self.canvas.block_list:
+            if hasattr(item, 'to_dict'):
+                data.append(item.to_dict())
+        return data
+
+    def load_scene(self, data):
+        self.canvas.scene.clear()
+        self.canvas.block_list.clear()
+
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtCore import QPointF
+        from items.iso_block import IsoBlockItem
+        from items.iso_line import IsoLineItem
+        from items.iso_shape import IsoShapeItem
+        from items.iso_text import IsoTextItem
+        from items.iso_polyline import IsoPolylineItem
+
+        for item_data in data:
+            item_type = item_data.get('type')
+            item = None
+            if item_type == 'IsoBlockItem':
+                item = IsoBlockItem(block_type=item_data['block_type'], w=item_data['w'], d=item_data['d'], h=item_data['h'],
+                                    base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+                item.rot_x = item_data.get('rot_x', 0)
+                item.rot_y = item_data.get('rot_y', 0)
+                item.rot_z = item_data.get('rot_z', 0)
+                item.update_geometry()
+            elif item_type == 'IsoLineItem':
+                item = IsoLineItem(length=item_data['length'], thickness=item_data['thickness'],
+                                   arrow_type=item_data['arrow_type'], arrow_pos=item_data['arrow_pos'],
+                                   base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+                item.rot_x = item_data.get('rot_x', 0)
+                item.rot_y = item_data.get('rot_y', 0)
+                item.rot_z = item_data.get('rot_z', 0)
+                item.update_geometry()
+            elif item_type == 'IsoShapeItem':
+                item = IsoShapeItem(shape_type=item_data['shape_type'], size=item_data['size'],
+                                    base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+                item.rot_x = item_data.get('rot_x', 0)
+                item.rot_y = item_data.get('rot_y', 0)
+                item.rot_z = item_data.get('rot_z', 0)
+                item.update_geometry()
+            elif item_type == 'IsoTextItem':
+                item = IsoTextItem(text=item_data['text'], font_size=item_data['font_size'], plane=item_data['plane'],
+                                   base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+            elif item_type == 'IsoPolylineItem':
+                pts = [QPointF(p['x'], p['y']) for p in item_data['points']]
+                item = IsoPolylineItem(points=pts, thickness=item_data['thickness'],
+                                       base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+
+            if item:
+                self.canvas.scene.addItem(item)
+                item.setPos(item_data['pos']['x'], item_data['pos']['y'])
+                item.setZValue(item_data.get('zValue', 0))
+                self.canvas.block_list.append(item)
+
+    def save_state(self):
+        if self.is_undoing: return
+        data = self.serialize_scene()
+
+        # If we are not at the end of history, truncate it
+        if self.history_index < len(self.history) - 1:
+            self.history = self.history[:self.history_index + 1]
+
+        # Avoid saving identical consecutive states
+        if self.history and self.history[-1] == data:
+            return
+
+        self.history.append(data)
+        self.history_index = len(self.history) - 1
+
+    def undo(self):
+        if self.history_index > 0:
+            self.is_undoing = True
+            self.history_index -= 1
+            data = self.history[self.history_index]
+            self.load_scene(data)
+            self.is_undoing = False
+
+    def select_all(self):
+        for item in self.canvas.scene.items():
+            item.setSelected(True)
+
+    def save_file(self):
+        fname, _ = QFileDialog.getSaveFileName(self, '保存', '', 'JSON Files (*.json)')
+        if fname:
+            with open(fname, 'w', encoding='utf-8') as f:
+                json.dump(self.serialize_scene(), f, ensure_ascii=False, indent=2)
+
+    def open_file(self):
+        fname, _ = QFileDialog.getOpenFileName(self, '開く', '', 'JSON Files (*.json)')
+        if fname:
+            with open(fname, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            self.load_scene(data)
+            self.save_state()
+
+    # Override key release to catch deletes
+    def keyReleaseEvent(self, event):
+        super().keyReleaseEvent(event)
+        if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
+            self.save_state()

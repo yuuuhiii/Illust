@@ -109,14 +109,14 @@ class IsoPolylineItem(QGraphicsItemGroup):
 
     def mouseMoveEvent(self, event):
         if hasattr(self, 'dragging_index') and self.dragging_index >= 0:
-            scene_pos = self.mapToScene(event.pos())
+            local_pos = event.pos()
 
             # Inverse projection
             import math
             angle = math.radians(30)
             c, s = math.cos(angle), math.sin(angle)
-            A = scene_pos.x() / c
-            B = scene_pos.y() / s
+            A = local_pos.x() / c
+            B = local_pos.y() / s
             X = (A + B) / 2.0
             Y = (B - A) / 2.0
 
@@ -151,12 +151,12 @@ class IsoPolylineItem(QGraphicsItemGroup):
         # Click on segment to add point
         # A simple approximation: if close to path, inject point
         if self.path_item.contains(event.pos()):
-            scene_pos = self.mapToScene(event.pos())
+            local_pos = event.pos()
             import math
             angle = math.radians(30)
             c, s = math.cos(angle), math.sin(angle)
-            A = scene_pos.x() / c
-            B = scene_pos.y() / s
+            A = local_pos.x() / c
+            B = local_pos.y() / s
             X = (A + B) / 2.0
             Y = (B - A) / 2.0
 
@@ -190,3 +190,15 @@ class IsoPolylineItem(QGraphicsItemGroup):
         new_item = IsoPolylineItem(points=list(self.points), thickness=self.thickness, base_color=self.base_color, opacity=self.opacity_val)
         new_item.update_geometry()
         return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoPolylineItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'points': [{'x': p.x(), 'y': p.y()} for p in self.points],
+            'thickness': self.thickness,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val
+        }
