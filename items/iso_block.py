@@ -124,9 +124,20 @@ class IsoBlockItem(QGraphicsItemGroup):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             if IsoBlockItem.SNAP_ENABLED:
                 new_pos = value
-                x = round(new_pos.x() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-                y = round(new_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-                return QPointF(x, y)
+                sx = new_pos.x()
+                sy = new_pos.y()
+                import math
+                c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+                # Inverse projection assuming z=0
+                iso_x = (sx / c + sy / s) / 2
+                iso_y = (sy / s - sx / c) / 2
+
+                iso_x = round(iso_x / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
+                iso_y = round(iso_y / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
+
+                snap_sx = (iso_x - iso_y) * c
+                snap_sy = (iso_x + iso_y) * s
+                return QPointF(snap_sx, snap_sy)
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)

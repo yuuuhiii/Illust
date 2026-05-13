@@ -39,4 +39,4 @@ view.scene.clearSelection()
 app.processEvents()
 
 screenshot = view.grab()
-screenshot.save("/tmp/app_screenshot_flat.png")
+screenshot.save("/tmp/app_screenshot_flat2.png")
