@@ -2,37 +2,7 @@ import math
 from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
 from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
 from PyQt6.QtCore import Qt, QPointF
-
-def rotate_3d(x, y, z, rx, ry, rz):
-    if rx != 0:
-        rad = math.radians(rx)
-        c, s = math.cos(rad), math.sin(rad)
-        y, z = y * c - z * s, y * s + z * c
-    if ry != 0:
-        rad = math.radians(ry)
-        c, s = math.cos(rad), math.sin(rad)
-        x, z = x * c + z * s, -x * s + z * c
-    if rz != 0:
-        rad = math.radians(rz)
-        c, s = math.cos(rad), math.sin(rad)
-        x, y = x * c - y * s, x * s + y * c
-    return x, y, z
-def project_iso(x, y, z):
-    angle = math.radians(30)
-    c, s = math.cos(angle), math.sin(angle)
-    return (x - y) * c, (x + y) * s - z
-
-def compute_normal(face):
-    if len(face) < 3: return (0,0,1)
-    p0, p1, p2 = face[0], face[1], face[2]
-    ux, uy, uz = p1[0]-p0[0], p1[1]-p0[1], p1[2]-p0[2]
-    vx, vy, vz = p2[0]-p0[0], p2[1]-p0[1], p2[2]-p0[2]
-    nx = uy*vz - uz*vy
-    ny = uz*vx - ux*vz
-    nz = ux*vy - uy*vx
-    length = math.sqrt(nx*nx + ny*ny + nz*nz)
-    if length == 0: return (0,0,1)
-    return (nx/length, ny/length, nz/length)
+from items.math3d import rotate_3d, project_iso, compute_normal
 
 def generate_cylinder(radius, length, segments=36, offset_x=0):
     faces = []
@@ -267,3 +237,24 @@ class IsoLineItem(QGraphicsItemGroup):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
+
+    def clone(self):
+        new_item = IsoLineItem(length=self.length, thickness=self.thickness, arrow_type=self.arrow_type, arrow_pos=self.arrow_pos, base_color=self.base_color, opacity=self.opacity_val)
+        new_item.rot_x = self.rot_x
+        new_item.rot_y = self.rot_y
+        new_item.rot_z = self.rot_z
+        new_item.update_geometry()
+        return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoLineItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'length': self.length, 'thickness': self.thickness,
+            'arrow_type': self.arrow_type, 'arrow_pos': self.arrow_pos,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val,
+            'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
+        }

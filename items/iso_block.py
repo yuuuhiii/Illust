@@ -2,33 +2,29 @@ import math
 from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
 from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
 from PyQt6.QtCore import Qt, QPointF
+from items.math3d import rotate_3d, project_iso, compute_normal, generate_sphere, generate_cylinder_vertical
 
 class IsoBlockItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
     GRID_SIZE = 10
 
-    def __init__(self, w=150, d=100, h=40, base_color=QColor(200, 200, 210), opacity=100):
+    def __init__(self, block_type="box", w=150, d=100, h=40, base_color=QColor(200, 200, 210), opacity=100):
         super().__init__()
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsSelectable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemSendsGeometryChanges)
 
+        self.block_type = block_type
         self.w, self.d, self.h = w, d, h
         self.base_color = base_color
         self.opacity_val = opacity
+        self.rot_x = 0.0
+        self.rot_y = 0.0
+        self.rot_z = 0.0
 
         from PyQt6.QtWidgets import QGraphicsLineItem
 
-        self.top_item = QGraphicsPolygonItem()
-        self.right_item = QGraphicsPolygonItem()
-        self.left_item = QGraphicsPolygonItem()
-
-        pen = QPen(Qt.GlobalColor.black, 1.5)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-
-        for item in [self.top_item, self.right_item, self.left_item]:
-            item.setPen(pen)
-            item.setParentItem(self)
+        self.poly_items = []
 
         # Axes
         self.axis_x = QGraphicsLineItem()
@@ -40,79 +36,145 @@ class IsoBlockItem(QGraphicsItemGroup):
         self.axis_z.setPen(QPen(Qt.GlobalColor.blue, 2))
 
         for ax in [self.axis_x, self.axis_y, self.axis_z]:
-            self.addToGroup(ax)
+            ax.setParentItem(self)
             ax.hide()
 
         self.update_geometry()
 
-    def update_geometry(self, w=None, d=None, h=None, base_color=None, opacity=None):
+    def _generate_mesh(self):
+        faces = []
+
+        cx = self.w / 2
+        cy = self.d / 2
+        cz = -self.h / 2
+
+        if self.block_type == "box":
+            x0, x1 = 0, self.w
+            y0, y1 = 0, self.d
+            z0, z1 = 0, -self.h
+
+            v000 = (x0, y0, z0)
+            v100 = (x1, y0, z0)
+            v110 = (x1, y1, z0)
+            v010 = (x0, y1, z0)
+            v001 = (x0, y0, z1)
+            v101 = (x1, y0, z1)
+            v111 = (x1, y1, z1)
+            v011 = (x0, y1, z1)
+
+            faces = [
+                [v000, v010, v110, v100], # Top
+                [v001, v101, v111, v011], # Bottom
+                [v000, v001, v011, v010], # Front-Left
+                [v100, v110, v111, v101], # Back-Right
+                [v000, v100, v101, v001], # Front-Right
+                [v010, v011, v111, v110], # Back-Left
+            ]
+        elif self.block_type == "cylinder":
+            radius = min(self.w, self.d) / 2
+            cyl_faces = generate_cylinder_vertical(radius, self.h, segments=16)
+            for face in cyl_faces:
+                faces.append([(x + cx, y + cy, z + cz) for x, y, z in face])
+        elif self.block_type == "sphere":
+            radius = min(self.w, self.d, self.h) / 2
+            sph_faces = generate_sphere(radius, segments_theta=16, segments_phi=8)
+            for face in sph_faces:
+                faces.append([(x + cx, y + cy, z + cz) for x, y, z in face])
+
+        # Shift to center, rotate, shift back
+        rot_faces = []
+        for face in faces:
+            rot_face = []
+            for px, py, pz in face:
+                px -= cx
+                py -= cy
+                pz -= cz
+                rx, ry, rz = rotate_3d(px, py, pz, self.rot_x, self.rot_y, self.rot_z)
+                rx += cx
+                ry += cy
+                rz += cz
+                rot_face.append((rx, ry, rz))
+            rot_faces.append(rot_face)
+
+        return rot_faces
+
+    def update_geometry(self, block_type=None, w=None, d=None, h=None, base_color=None, opacity=None, rot_x=None, rot_y=None, rot_z=None):
         self.prepareGeometryChange()
 
+        if block_type is not None: self.block_type = block_type
         if w is not None: self.w = w
         if d is not None: self.d = d
         if h is not None: self.h = h
+
+        # Enforce shape dimensions based on type
+        if self.block_type == "cylinder":
+            self.d = self.w
+        elif self.block_type == "sphere":
+            self.d = self.w
+            self.h = self.w
+
         if base_color is not None: self.base_color = base_color
-        if opacity is not None: 
-            self.opacity_val = opacity
-            self.setOpacity(self.opacity_val / 100.0)
+        if opacity is not None: self.opacity_val = max(10, min(100, opacity))
+        if rot_x is not None: self.rot_x = rot_x
+        if rot_y is not None: self.rot_y = rot_y
+        if rot_z is not None: self.rot_z = rot_z
 
-        angle = math.radians(30)
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
+        self.setOpacity(self.opacity_val / 100.0)
+        faces = self._generate_mesh()
 
-        v_front_top = QPointF(0, 0)
-        v_right_top = QPointF(self.w * cos_a, -self.w * sin_a)
-        v_left_top = QPointF(-self.d * cos_a, -self.d * sin_a)
-        v_back_top = QPointF((self.w - self.d) * cos_a, -(self.w + self.d) * sin_a)
-        v_front_bottom = QPointF(0, self.h)
-        v_right_bottom = QPointF(self.w * cos_a, -self.w * sin_a + self.h)
-        v_left_bottom = QPointF(-self.d * cos_a, -self.d * sin_a + self.h)
+        visible_faces = []
+        for face in faces:
+            nx, ny, nz = compute_normal(face)
 
-        self.top_item.setPolygon(QPolygonF([v_front_top, v_right_top, v_back_top, v_left_top]))
-        self.right_item.setPolygon(QPolygonF([v_front_top, v_right_top, v_right_bottom, v_front_bottom]))
-        self.left_item.setPolygon(QPolygonF([v_front_top, v_left_top, v_left_bottom, v_front_bottom]))
+            cx = sum(v[0] for v in face) / len(face)
+            cy = sum(v[1] for v in face) / len(face)
+            cz = sum(v[2] for v in face) / len(face)
+            depth = cx + cy + cz
 
-        self.top_item.setBrush(QBrush(self.base_color.lighter(110)))
-        self.right_item.setBrush(QBrush(self.base_color.darker(130)))
-        self.left_item.setBrush(QBrush(self.base_color.darker(110)))
+            # Simple lighting
+            lx, ly, lz = 0.5, 1.0, 1.5
+            ll = math.sqrt(lx*lx + ly*ly + lz*lz)
+            dot = (nx*lx + ny*ly + nz*lz) / ll
+            factor = 0.4 + 0.6 * (0.5 + 0.5 * dot)
 
-        if self.isSelected():
-            sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
-            self.top_item.setPen(sel_pen)
-            self.right_item.setPen(sel_pen)
-            self.left_item.setPen(sel_pen)
+            poly = QPolygonF()
+            for rx, ry, rz in face:
+                sx, sy = project_iso(rx, ry, rz)
+                poly.append(QPointF(sx, sy))
 
-            # Draw axes at the center of the block
-            cx = (v_front_top.x() + v_back_top.x()) / 2
-            cy = (v_front_top.y() + v_back_top.y() + v_front_bottom.y()) / 2
+            visible_faces.append({'poly': poly, 'depth': depth, 'factor': factor, 'normal': (nx, ny, nz)})
 
-            # Isometric directions for X, Y, Z
-            # X goes right-down, Y goes left-down, Z goes up
-            len_ax = max(50.0, max(self.w, self.d, self.h) * 0.5)
+        visible_faces.sort(key=lambda f: f['depth'])
 
-            p_center = QPointF(cx, cy)
-            p_x = QPointF(cx + len_ax * cos_a, cy - len_ax * sin_a)
-            p_y = QPointF(cx - len_ax * cos_a, cy - len_ax * sin_a)
-            p_z = QPointF(cx, cy - len_ax)
+        # Clean up old polygons completely
+        for p in self.poly_items:
+            p.setParentItem(None)
+            if self.scene():
+                self.scene().removeItem(p)
+        self.poly_items.clear()
 
-            self.axis_x.setLine(p_center.x(), p_center.y(), p_x.x(), p_x.y())
-            self.axis_y.setLine(p_center.x(), p_center.y(), p_y.x(), p_y.y())
-            self.axis_z.setLine(p_center.x(), p_center.y(), p_z.x(), p_z.y())
+        sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+        norm_pen = QPen(Qt.GlobalColor.black, 1.5)
+        norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
-            self.axis_x.show()
-            self.axis_y.show()
-            self.axis_z.show()
+        for vf in visible_faces:
+            # Backface culling: if normal points away from camera
+            # Camera in iso is roughly (-1, -1, 1). Let's do simple dot product.
+            # Actually depth sorting is enough, but wait, faces inside shouldn't be rendered.
+            # Depth sorting draws back faces first, then front faces over them.
+            item = QGraphicsPolygonItem()
+            item.setPolygon(vf['poly'])
+            r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
+            g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
+            b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
+            item.setBrush(QBrush(QColor(r, g, b)))
+            item.setPen(sel_pen if self.isSelected() else norm_pen)
+            item.setParentItem(self)
+            self.poly_items.append(item)
 
-        else:
-            norm_pen = QPen(Qt.GlobalColor.black, 1.5)
-            norm_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-            self.top_item.setPen(norm_pen)
-            self.right_item.setPen(norm_pen)
-            self.left_item.setPen(norm_pen)
-
-            self.axis_x.hide()
-            self.axis_y.hide()
-            self.axis_z.hide()
+        self.axis_x.hide()
+        self.axis_y.hide()
+        self.axis_z.hide()
 
     def boundingRect(self):
         return self.childrenBoundingRect()
@@ -122,22 +184,32 @@ class IsoBlockItem(QGraphicsItemGroup):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
-            if IsoBlockItem.SNAP_ENABLED:
+            if self.SNAP_ENABLED:
                 new_pos = value
-                sx = new_pos.x()
-                sy = new_pos.y()
-                import math
-                c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
-                # Inverse projection assuming z=0
-                iso_x = (sx / c + sy / s) / 2
-                iso_y = (sy / s - sx / c) / 2
-
-                iso_x = round(iso_x / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-                iso_y = round(iso_y / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-
-                snap_sx = (iso_x - iso_y) * c
-                snap_sy = (iso_x + iso_y) * s
-                return QPointF(snap_sx, snap_sy)
+                x = round(new_pos.x() / self.GRID_SIZE) * self.GRID_SIZE
+                y = round(new_pos.y() / self.GRID_SIZE) * self.GRID_SIZE
+                return QPointF(x, y)
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
+
+    def clone(self):
+        new_item = IsoBlockItem(block_type=self.block_type, w=self.w, d=self.d, h=self.h, base_color=self.base_color, opacity=self.opacity_val)
+        new_item.rot_x = self.rot_x
+        new_item.rot_y = self.rot_y
+        new_item.rot_z = self.rot_z
+        new_item.update_geometry()
+        return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoBlockItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'block_type': self.block_type,
+            'w': self.w, 'd': self.d, 'h': self.h,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val,
+            'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
+        }
