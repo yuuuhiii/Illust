@@ -123,3 +123,14 @@ class IsoTextItem(QGraphicsItemGroup):
         new_item = IsoTextItem(text=self.text, font_size=self.font_size, plane=self.plane, base_color=self.base_color, opacity=self.opacity_val)
         new_item.update_geometry()
         return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoTextItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'text': self.text, 'font_size': self.font_size, 'plane': self.plane,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val
+        }

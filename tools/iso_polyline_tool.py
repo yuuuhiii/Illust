@@ -78,3 +78,8 @@ class DrawIsoPolylineTool(BaseTool):
                 self.current_item.setSelected(True)
             self.current_item = None
             self.points_3d = []
+
+            from tools.select_tool import SelectTool
+            self.view.tool_manager.set_tool(SelectTool(self.view))
+            if hasattr(self.view.window(), 'sync_ui_to_selection'):
+                self.view.window().sync_ui_to_selection()

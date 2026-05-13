@@ -230,3 +230,16 @@ class IsoLineItem(QGraphicsItemGroup):
         new_item.rot_z = self.rot_z
         new_item.update_geometry()
         return new_item
+
+
+    def to_dict(self):
+        return {
+            'type': 'IsoLineItem',
+            'pos': {'x': self.pos().x(), 'y': self.pos().y()},
+            'zValue': self.zValue(),
+            'length': self.length, 'thickness': self.thickness,
+            'arrow_type': self.arrow_type, 'arrow_pos': self.arrow_pos,
+            'base_color': self.base_color.name(),
+            'opacity': self.opacity_val,
+            'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
+        }
