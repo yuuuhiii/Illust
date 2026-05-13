@@ -13,9 +13,17 @@ class DrawIsoBlockTool(BaseTool):
         scene_pos = self.view.mapToScene(event.pos())
         
         if IsoBlockItem.SNAP_ENABLED:
-            x = round(scene_pos.x() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-            y = round(scene_pos.y() / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
-            scene_pos = QPointF(x, y)
+            sx = scene_pos.x()
+            sy = scene_pos.y()
+            import math
+            c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+            iso_x = (sx / c + sy / s) / 2
+            iso_y = (sy / s - sx / c) / 2
+            iso_x = round(iso_x / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
+            iso_y = round(iso_y / IsoBlockItem.GRID_SIZE) * IsoBlockItem.GRID_SIZE
+            snap_sx = (iso_x - iso_y) * c
+            snap_sy = (iso_x + iso_y) * s
+            scene_pos = QPointF(snap_sx, snap_sy)
 
         block_type, w, d, h, color, opacity = self.get_props_func()
         block = IsoBlockItem(block_type=block_type, w=w, d=d, h=h, base_color=color, opacity=opacity)

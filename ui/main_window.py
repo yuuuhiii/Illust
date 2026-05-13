@@ -466,6 +466,33 @@ class MainWindow(QMainWindow):
         for item in self.canvas.scene.selectedItems():
             self.canvas.remove_block(item)
 
+    def duplicate_selected(self):
+        selected = self.canvas.scene.selectedItems()
+        if not selected:
+            return
+
+        new_selection = []
+        self.canvas.scene.clearSelection()
+
+        for item in selected:
+            if hasattr(item, 'w') and hasattr(item, 'd') and hasattr(item, 'h'):
+                new_item = __import__('items.iso_block', fromlist=['IsoBlockItem']).IsoBlockItem(w=item.w, d=item.d, h=item.h, base_color=item.base_color, opacity=item.opacity_val)
+            elif hasattr(item, 'length') and hasattr(item, 'thickness'):
+                new_item = __import__('items.iso_line', fromlist=['IsoLineItem']).IsoLineItem(length=item.length, thickness=item.thickness, arrow_type=item.arrow_type, arrow_pos=item.arrow_pos, base_color=item.base_color, opacity=item.opacity_val)
+                new_item.update_geometry(rot_x=item.rot_x, rot_y=item.rot_y, rot_z=item.rot_z)
+            else:
+                continue
+
+            # Offset by one grid step in isometric space
+            import math
+            c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+            offset_sx = -10 * c
+            offset_sy = -10 * s
+
+            self.canvas.add_block(new_item, item.pos() + QPointF(offset_sx, offset_sy))
+            new_item.setSelected(True)
+            new_selection.append(new_item)
+
     def change_z_index(self, direction):
         selected = self.canvas.scene.selectedItems()
         if selected:
@@ -481,6 +508,8 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
             self.delete_selected()
+        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_D:
+            self.duplicate_selected()
         super().keyPressEvent(event)
 
     def copy_item(self):

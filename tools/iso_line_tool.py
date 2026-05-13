@@ -18,16 +18,21 @@ class DrawIsoLineTool(BaseTool):
         scene_pos = self.view.mapToScene(event.pos())
 
         if IsoLineItem.SNAP_ENABLED:
-            x = round(scene_pos.x() / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
-            y = round(scene_pos.y() / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
-            scene_pos = QPointF(x, y)
+            sx = scene_pos.x()
+            sy = scene_pos.y()
+            c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+            iso_x = (sx / c + sy / s) / 2
+            iso_y = (sy / s - sx / c) / 2
+            iso_x = round(iso_x / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
+            iso_y = round(iso_y / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
+            snap_sx = (iso_x - iso_y) * c
+            snap_sy = (iso_x + iso_y) * s
+            scene_pos = QPointF(snap_sx, snap_sy)
 
         if self.start_pos is None:
             self.start_pos = scene_pos
             thickness, arrow_type, arrow_pos, color, opacity, _, _, _ = self.get_props_func()
             self.preview_item = IsoLineItem(length=1, thickness=thickness, arrow_type=arrow_type, arrow_pos=arrow_pos, base_color=color, opacity=opacity)
-            self.preview_item.SNAP_ENABLED = False
-            self.preview_item.SNAP_ENABLED = False
             self.preview_item.SNAP_ENABLED = False
             self.view.scene.addItem(self.preview_item)
             self.preview_item.setPos(scene_pos)
@@ -158,7 +163,12 @@ class DrawIsoLineTool(BaseTool):
         snap_y = start.y() + best_dir[1] * proj_length
 
         if IsoLineItem.SNAP_ENABLED:
-            snap_x = round(snap_x / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
-            snap_y = round(snap_y / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
+            c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+            iso_x = (snap_x / c + snap_y / s) / 2
+            iso_y = (snap_y / s - snap_x / c) / 2
+            iso_x = round(iso_x / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
+            iso_y = round(iso_y / IsoLineItem.GRID_SIZE) * IsoLineItem.GRID_SIZE
+            snap_x = (iso_x - iso_y) * c
+            snap_y = (iso_x + iso_y) * s
 
         return QPointF(snap_x, snap_y)

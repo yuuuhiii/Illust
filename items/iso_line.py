@@ -7,7 +7,7 @@ from items.math3d import rotate_3d, project_iso, compute_normal
 def generate_cylinder(radius, length, segments=36, offset_x=0):
     faces = []
     # Subdivide long cylinders to fix depth sorting
-    length_segments = max(1, int(length / 10))
+    length_segments = 1
     seg_len = length / length_segments
 
     for ls in range(length_segments):
@@ -39,7 +39,7 @@ def generate_cone(radius, length, segments=36, offset_x=0):
 
 def generate_box(length, width, height, offset_x=0):
     faces = []
-    length_segments = max(1, int(length / 10))
+    length_segments = 1
     seg_len = length / length_segments
     w, h = width / 2, height / 2
 
@@ -223,9 +223,17 @@ class IsoLineItem(QGraphicsItemGroup):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             if self.SNAP_ENABLED:
                 new_pos = value
-                x = round(new_pos.x() / self.GRID_SIZE) * self.GRID_SIZE
-                y = round(new_pos.y() / self.GRID_SIZE) * self.GRID_SIZE
-                return QPointF(x, y)
+                sx = new_pos.x()
+                sy = new_pos.y()
+                import math
+                c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+                iso_x = (sx / c + sy / s) / 2
+                iso_y = (sy / s - sx / c) / 2
+                iso_x = round(iso_x / self.GRID_SIZE) * self.GRID_SIZE
+                iso_y = round(iso_y / self.GRID_SIZE) * self.GRID_SIZE
+                snap_sx = (iso_x - iso_y) * c
+                snap_sy = (iso_x + iso_y) * s
+                return QPointF(snap_sx, snap_sy)
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
