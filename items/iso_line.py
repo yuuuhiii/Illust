@@ -286,6 +286,8 @@ class IsoLineItem(QGraphicsItemGroup):
 
     @classmethod
     def from_dict(cls, data):
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtCore import QPointF
         color = QColor(data['base_color'])
         item = cls(length=data['length'], thickness=data['thickness'], arrow_type=data['arrow_type'],
                    arrow_pos=data.get('arrow_pos', 'end'), base_color=color, opacity=data['opacity'])

@@ -293,6 +293,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "エラー", f"保存に失敗しました: {e}")
 
     def load_from_json(self):
+        from items.iso_block import IsoBlockItem
+        from items.iso_line import IsoLineItem
+
         filepath, _ = QFileDialog.getOpenFileName(self, "読み込み", "", "JSON Files (*.json)")
         if not filepath:
             return

@@ -141,7 +141,6 @@ class IsoBlockItem(QGraphicsItemGroup):
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
-
     def to_dict(self):
         return {
             'type': 'IsoBlockItem',
@@ -156,6 +155,8 @@ class IsoBlockItem(QGraphicsItemGroup):
 
     @classmethod
     def from_dict(cls, data):
+        from PyQt6.QtGui import QColor
+        from PyQt6.QtCore import QPointF
         color = QColor(data['base_color'])
         item = cls(w=data['w'], d=data['d'], h=data['h'], base_color=color, opacity=data['opacity'])
         item.setPos(QPointF(data['x'], data['y']))
