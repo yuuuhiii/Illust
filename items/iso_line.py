@@ -4,7 +4,7 @@ from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
 from PyQt6.QtCore import Qt, QPointF
 from items.math3d import rotate_3d, project_iso, compute_normal
 
-def generate_cylinder(radius, length, segments=12, offset_x=0):
+def generate_cylinder(radius, length, segments=36, offset_x=0):
     faces = []
     # Subdivide long cylinders to fix depth sorting
     length_segments = max(1, int(length / 10))
@@ -25,7 +25,7 @@ def generate_cylinder(radius, length, segments=12, offset_x=0):
     faces.append([(offset_x + length, math.cos(j * 2 * math.pi / segments) * radius, math.sin(j * 2 * math.pi / segments) * radius) for j in range(segments)])
     return faces
 
-def generate_cone(radius, length, segments=12, offset_x=0):
+def generate_cone(radius, length, segments=36, offset_x=0):
     faces = []
     x1, x2 = offset_x, offset_x + length
     for i in range(segments):
@@ -129,15 +129,15 @@ class IsoLineItem(QGraphicsItemGroup):
                 start_faces = [[(-x - self.length/2, y, z) for x, y, z in f] for f in start_faces]
                 faces.extend(start_faces)
         elif self.arrow_type == "cylinder":
-            if ll > 0: faces.extend(generate_cylinder(self.thickness / 2, ll, segments=12, offset_x=-self.length/2 + start_al))
-            if end_al > 0: faces.extend(generate_cone(self.thickness * 1.2, end_al, segments=12, offset_x=-self.length/2 + start_al + ll))
+            if ll > 0: faces.extend(generate_cylinder(self.thickness / 2, ll, segments=36, offset_x=-self.length/2 + start_al))
+            if end_al > 0: faces.extend(generate_cone(self.thickness * 1.2, end_al, segments=36, offset_x=-self.length/2 + start_al + ll))
             if start_al > 0:
-                start_faces = generate_cone(self.thickness * 1.2, start_al, segments=12, offset_x=-start_al)
+                start_faces = generate_cone(self.thickness * 1.2, start_al, segments=36, offset_x=-start_al)
                 # Mirror cone for start
                 start_faces = [[(-x - self.length/2, y, z) for x, y, z in f] for f in start_faces]
                 faces.extend(start_faces)
         else: # none
-            faces.extend(generate_cylinder(self.thickness / 2, self.length, segments=12, offset_x=-self.length/2))
+            faces.extend(generate_cylinder(self.thickness / 2, self.length, segments=36, offset_x=-self.length/2))
 
         return faces
 
@@ -197,8 +197,15 @@ class IsoLineItem(QGraphicsItemGroup):
             r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
             g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
             b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
-            item.setBrush(QBrush(QColor(r, g, b)))
-            item.setPen(sel_pen if self.isSelected() else norm_pen)
+            brush_color = QColor(r, g, b)
+            item.setBrush(QBrush(brush_color))
+            if self.isSelected():
+                item.setPen(sel_pen)
+            else:
+                if self.arrow_type == "flat" or vf.get('is_flat_part', False):
+                    item.setPen(norm_pen)
+                else:
+                    item.setPen(QPen(brush_color, 1.0))
             item.setParentItem(self)
             self.poly_items.append(item)
 
