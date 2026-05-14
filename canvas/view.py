@@ -50,8 +50,6 @@ class CanvasView(QGraphicsView):
 
     def update_z_values(self):
         """現在の配列の並び順通りにZインデックスを振り直す"""
-        # Isometric Y sorting: higher Y means further down the screen -> front
-        self.block_list.sort(key=lambda b: b.pos().y())
         for i, block in enumerate(self.block_list):
             block.setZValue(i)
 
