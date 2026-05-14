@@ -25,11 +25,18 @@ class DrawIsoBlockTool(BaseTool):
             snap_sy = (iso_x + iso_y) * s
             scene_pos = QPointF(snap_sx, snap_sy)
 
-        w, d, h, color, opacity = self.get_props_func()
-        block = IsoBlockItem(w=w, d=d, h=h, base_color=color, opacity=opacity)
+        block_type, w, d, h, color, opacity = self.get_props_func()
+        block = IsoBlockItem(block_type=block_type, w=w, d=d, h=h, base_color=color, opacity=opacity)
         
         # キャンバス側の配列に登録させるために add_block を呼ぶ
         self.view.add_block(block, scene_pos)
         
         self.scene.clearSelection()
         block.setSelected(True)
+
+        # Auto-switch to SelectTool
+        from tools.select_tool import SelectTool
+        self.view.tool_manager.set_tool(SelectTool(self.view))
+        # Sync UI
+        if hasattr(self.view.window(), 'sync_ui_to_selection'):
+            self.view.window().sync_ui_to_selection()
