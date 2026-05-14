@@ -18,11 +18,12 @@ class CanvasView(QGraphicsView):
         self.tool_manager.set_tool(SelectTool(self))
 
     def add_block(self, block, pos):
-        """ブロックを追加し, 配列の最後(最前面)に登録する"""
         self.scene.addItem(block)
         block.setPos(pos)
         self.block_list.append(block)
         self.update_z_values()
+        if hasattr(self.window(), 'save_state'):
+            self.window().save_state()
 
     def remove_block(self, block):
         """ブロックを削除し, 配列からも取り除く"""
@@ -63,3 +64,5 @@ class CanvasView(QGraphicsView):
     def mouseReleaseEvent(self, event):
         self.tool_manager.mouseReleaseEvent(event)
         super().mouseReleaseEvent(event)
+        if hasattr(self.window(), 'save_state'):
+            self.window().save_state()
