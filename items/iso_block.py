@@ -1,6 +1,6 @@
 import math
-from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem
-from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF
+from PyQt6.QtWidgets import QGraphicsItemGroup, QGraphicsPolygonItem, QGraphicsItem, QGraphicsEllipseItem
+from PyQt6.QtGui import QColor, QPen, QBrush, QPolygonF, QRadialGradient
 from PyQt6.QtCore import Qt, QPointF
 from items.math3d import rotate_3d, project_iso, compute_normal, generate_sphere, generate_cylinder_vertical
 
@@ -72,12 +72,12 @@ class IsoBlockItem(QGraphicsItemGroup):
             ]
         elif self.block_type == "cylinder":
             radius = min(self.w, self.d) / 2
-            cyl_faces = generate_cylinder_vertical(radius, self.h, segments=16)
+            cyl_faces = generate_cylinder_vertical(radius, self.h, segments=72)
             for face in cyl_faces:
                 faces.append([(x + cx, y + cy, z + cz) for x, y, z in face])
         elif self.block_type == "sphere":
             radius = min(self.w, self.d, self.h) / 2
-            sph_faces = generate_sphere(radius, segments_theta=16, segments_phi=8)
+            sph_faces = generate_sphere(radius, segments_theta=32, segments_phi=16)
             for face in sph_faces:
                 faces.append([(x + cx, y + cy, z + cz) for x, y, z in face])
 
@@ -120,16 +120,55 @@ class IsoBlockItem(QGraphicsItemGroup):
         if rot_z is not None: self.rot_z = rot_z
 
         self.setOpacity(self.opacity_val / 100.0)
+        
+        # Clean up old polygons completely
+        for p in self.poly_items:
+            p.setParentItem(None)
+            if self.scene():
+                self.scene().removeItem(p)
+        self.poly_items.clear()
+        
+        sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
+
+        if self.block_type == "sphere":
+            radius = min(self.w, self.d, self.h) / 2
+            cx, cy, cz = self.w / 2, self.d / 2, -self.h / 2
+            sx, sy = project_iso(cx, cy, cz)
+            
+            item = QGraphicsEllipseItem(sx - radius, sy - radius, radius * 2, radius * 2)
+            
+            grad = QRadialGradient(sx - radius * 0.3, sy - radius * 0.4, radius * 1.5)
+            r = self.base_color.red()
+            g = self.base_color.green()
+            b = self.base_color.blue()
+            
+            grad.setColorAt(0.0, QColor(min(255, r + 80), min(255, g + 80), min(255, b + 80)))
+            grad.setColorAt(0.3, QColor(r, g, b))
+            grad.setColorAt(1.0, QColor(max(0, r - 100), max(0, g - 100), max(0, b - 100)))
+            item.setBrush(QBrush(grad))
+            
+            edge_color = QColor(max(0, r - 100), max(0, g - 100), max(0, b - 100))
+            smooth_pen = QPen(edge_color, 1.0)
+            item.setPen(sel_pen if self.isSelected() else smooth_pen)
+            
+            item.setParentItem(self)
+            self.poly_items.append(item)
+            
+            self.axis_x.hide()
+            self.axis_y.hide()
+            self.axis_z.hide()
+            return
+
         faces = self._generate_mesh()
 
         visible_faces = []
         for face in faces:
             nx, ny, nz = compute_normal(face)
 
-            cx = sum(v[0] for v in face) / len(face)
-            cy = sum(v[1] for v in face) / len(face)
-            cz = sum(v[2] for v in face) / len(face)
-            depth = cx + cy + cz
+            fcx = sum(v[0] for v in face) / len(face)
+            fcy = sum(v[1] for v in face) / len(face)
+            fcz = sum(v[2] for v in face) / len(face)
+            depth = fcx + fcy + fcz
 
             # Simple lighting
             lx, ly, lz = 0.5, 1.0, 1.5
@@ -139,19 +178,12 @@ class IsoBlockItem(QGraphicsItemGroup):
 
             poly = QPolygonF()
             for rx, ry, rz in face:
-                sx, sy = project_iso(rx, ry, rz)
-                poly.append(QPointF(sx, sy))
+                psx, psy = project_iso(rx, ry, rz)
+                poly.append(QPointF(psx, psy))
 
             visible_faces.append({'poly': poly, 'depth': depth, 'factor': factor, 'normal': (nx, ny, nz)})
 
         visible_faces.sort(key=lambda f: f['depth'])
-
-        # Clean up old polygons completely
-        for p in self.poly_items:
-            p.setParentItem(None)
-            if self.scene():
-                self.scene().removeItem(p)
-        self.poly_items.clear()
 
         sel_pen = QPen(Qt.GlobalColor.blue, 2.0, Qt.PenStyle.DashLine)
         norm_pen = QPen(Qt.GlobalColor.black, 1.5)
@@ -167,8 +199,20 @@ class IsoBlockItem(QGraphicsItemGroup):
             r = min(255, max(0, int(self.base_color.red() * vf['factor'])))
             g = min(255, max(0, int(self.base_color.green() * vf['factor'])))
             b = min(255, max(0, int(self.base_color.blue() * vf['factor'])))
-            item.setBrush(QBrush(QColor(r, g, b)))
-            item.setPen(sel_pen if self.isSelected() else norm_pen)
+            face_color = QColor(r, g, b)
+            item.setBrush(QBrush(face_color))
+            
+            if self.isSelected():
+                item.setPen(sel_pen)
+            else:
+                if self.block_type in ("sphere", "cylinder"):
+                    # 滑らかな曲面を表現するため、面と同じ色のペンを使って境界線を消しつつ隙間を埋める
+                    smooth_pen = QPen(face_color, 1.0)
+                    smooth_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                    item.setPen(smooth_pen)
+                else:
+                    item.setPen(norm_pen)
+                    
             item.setParentItem(self)
             self.poly_items.append(item)
 

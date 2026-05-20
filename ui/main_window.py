@@ -1,10 +1,9 @@
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut, QColor, QImage, QPainter, QPdfWriter, QPageSize
 import json
 from PyQt6.QtWidgets import (QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QDialog, QDialogButtonBox, QFormLayout,
                              QSpinBox, QLabel, QColorDialog, QCheckBox, QComboBox, QStackedWidget, QScrollArea, QFileDialog)
 
-from PyQt6.QtGui import QColor
-from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtCore import Qt, QPointF, QRectF
 
 from PyQt6.QtWidgets import QLineEdit
 from canvas.view import CanvasView
@@ -19,6 +18,7 @@ from items.iso_block import IsoBlockItem
 from items.iso_line import IsoLineItem
 from items.iso_shape import IsoShapeItem
 from items.iso_text import IsoTextItem
+from items.iso_group import IsoGroupItem
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -54,10 +54,45 @@ class MainWindow(QMainWindow):
         self.shortcut_open = QShortcut(QKeySequence.StandardKey.Open, self)
         self.shortcut_open.activated.connect(self.open_file)
 
+        self.shortcut_export = QShortcut(QKeySequence("Ctrl+E"), self)
+        self.shortcut_export.activated.connect(self.export_image)
+
+        self.shortcut_group = QShortcut(QKeySequence("Ctrl+G"), self)
+        self.shortcut_group.activated.connect(self.group_items)
+
+        self.shortcut_ungroup = QShortcut(QKeySequence("Ctrl+Shift+G"), self)
+        self.shortcut_ungroup.activated.connect(self.ungroup_items)
+
+        self.shortcut_zoom_in = QShortcut(QKeySequence("Ctrl++"), self)
+        self.shortcut_zoom_in.activated.connect(self.zoom_in)
+        self.shortcut_zoom_out = QShortcut(QKeySequence("Ctrl+-"), self)
+        self.shortcut_zoom_out.activated.connect(self.zoom_out)
+        self.shortcut_zoom_reset = QShortcut(QKeySequence("Ctrl+0"), self)
+        self.shortcut_zoom_reset.activated.connect(self.zoom_reset)
+
         # Save initial state
         self.save_state()
 
         panel_layout = QVBoxLayout()
+
+        panel_layout.addWidget(QLabel("<b>【ファイル操作】</b>"))
+        h_file = QHBoxLayout()
+        btn_open = QPushButton("開く (JSON)")
+        btn_open.clicked.connect(self.open_file)
+        btn_save = QPushButton("保存 (JSON)")
+        btn_save.clicked.connect(self.save_file)
+        h_file.addWidget(btn_open)
+        h_file.addWidget(btn_save)
+        panel_layout.addLayout(h_file)
+
+        self.cb_transparent = QCheckBox("背景を透過する (PNGのみ)")
+        panel_layout.addWidget(self.cb_transparent)
+
+        btn_export = QPushButton("画像/PDFエクスポート (Ctrl+E)")
+        btn_export.clicked.connect(self.export_image)
+        panel_layout.addWidget(btn_export)
+
+        panel_layout.addSpacing(20)
 
         panel_layout.addWidget(QLabel("<b>【ツール】</b>"))
         btn_select = QPushButton("選択・移動ツール")
@@ -162,6 +197,11 @@ class MainWindow(QMainWindow):
         self.combo_arrow_pos.currentIndexChanged.connect(self.update_selected_item)
         h_layout_pos.addWidget(self.combo_arrow_pos)
         l_line.addLayout(h_layout_pos)
+        
+        self.btn_split_line = QPushButton("貫通用に分割 (前後)")
+        self.btn_split_line.clicked.connect(self.split_selected_line)
+        l_line.addWidget(self.btn_split_line)
+
         self.prop_stack.addWidget(w_line)
 
         # 3. Shape Props
@@ -249,6 +289,15 @@ class MainWindow(QMainWindow):
         h_layer.addWidget(btn_back)
         panel_layout.addLayout(h_layer)
         
+        h_group = QHBoxLayout()
+        btn_group = QPushButton("グループ化 (Ctrl+G)")
+        btn_group.clicked.connect(self.group_items)
+        btn_ungroup = QPushButton("グループ解除 (Ctrl+Shift+G)")
+        btn_ungroup.clicked.connect(self.ungroup_items)
+        h_group.addWidget(btn_group)
+        h_group.addWidget(btn_ungroup)
+        panel_layout.addLayout(h_group)
+
         btn_delete = QPushButton("削除 (Del)")
         btn_delete.clicked.connect(self.delete_selected)
         panel_layout.addWidget(btn_delete)
@@ -310,7 +359,12 @@ class MainWindow(QMainWindow):
                 self.prop_stack.setCurrentIndex(0)
             return
 
-        if selected and isinstance(selected[0], IsoBlockItem):
+        if selected and isinstance(selected[0], IsoGroupItem):
+            self.prop_stack.setCurrentIndex(0)
+            item = selected[0]
+            if item in self.canvas.block_list:
+                self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
+        elif selected and isinstance(selected[0], IsoBlockItem):
             self.prop_stack.setCurrentIndex(1)
             item = selected[0]
             idx = self.combo_block_type.findData(item.block_type)
@@ -412,15 +466,52 @@ class MainWindow(QMainWindow):
                                  rot_z=self.spin_rot_z.value())
         elif selected and isinstance(selected[0], IsoLineItem):
             item = selected[0]
-            item.update_geometry(length=self.spin_length.value(),
-                                 thickness=self.spin_thickness.value(),
-                                 arrow_type=self.combo_arrow_type.currentData(),
-                                 arrow_pos=self.combo_arrow_pos.currentData(),
-                                 base_color=self.current_color,
-                                 opacity=self.spin_opacity.value(),
-                                 rot_x=self.spin_rot_x.value(),
-                                 rot_y=self.spin_rot_y.value(),
-                                 rot_z=self.spin_rot_z.value())
+            if getattr(item, 'pierce_peer', None):
+                length_val = self.spin_length.value()
+                item.logical_length = length_val
+                item.pierce_peer.logical_length = length_val
+                
+                half = max(1, length_val / 2)
+                t = self.spin_thickness.value()
+                at = self.combo_arrow_type.currentData()
+                c = self.current_color
+                op = self.spin_opacity.value()
+                rx = self.spin_rot_x.value()
+                ry = self.spin_rot_y.value()
+                rz = self.spin_rot_z.value()
+                
+                item.update_geometry(length=half, thickness=t, arrow_type=at, base_color=c, opacity=op, rot_x=rx, rot_y=ry, rot_z=rz)
+                item.pierce_peer.update_geometry(length=half, thickness=t, arrow_type=at, base_color=c, opacity=op, rot_x=rx, rot_y=ry, rot_z=rz)
+                
+                # Update positions based on logical_center to keep them rotating around the correct center
+                from items.math3d import rotate_3d, project_iso
+                center = item.logical_center
+                if not center: center = item.pos()
+                
+                rx_f, ry_f, rz_f = rotate_3d(length_val / 4 * (1 if item.is_front_half else -1), 0, 0, rx, ry, rz)
+                sx_f, sy_f = project_iso(rx_f, ry_f, rz_f)
+                
+                rx_b, ry_b, rz_b = rotate_3d(length_val / 4 * (1 if item.pierce_peer.is_front_half else -1), 0, 0, rx, ry, rz)
+                sx_b, sy_b = project_iso(rx_b, ry_b, rz_b)
+                
+                item._is_syncing = True
+                item.pierce_peer._is_syncing = True
+                
+                item.setPos(center.x() + sx_f, center.y() + sy_f)
+                item.pierce_peer.setPos(center.x() + sx_b, center.y() + sy_b)
+                
+                item._is_syncing = False
+                item.pierce_peer._is_syncing = False
+            else:
+                item.update_geometry(length=self.spin_length.value(),
+                                     thickness=self.spin_thickness.value(),
+                                     arrow_type=self.combo_arrow_type.currentData(),
+                                     arrow_pos=self.combo_arrow_pos.currentData(),
+                                     base_color=self.current_color,
+                                     opacity=self.spin_opacity.value(),
+                                     rot_x=self.spin_rot_x.value(),
+                                     rot_y=self.spin_rot_y.value(),
+                                     rot_z=self.spin_rot_z.value())
         elif selected and isinstance(selected[0], IsoShapeItem):
             item = selected[0]
             item.update_geometry(shape_type=self.combo_shape_type.currentData(),
@@ -470,6 +561,81 @@ class MainWindow(QMainWindow):
         for item in self.canvas.scene.selectedItems():
             self.canvas.remove_block(item)
 
+    def split_selected_line(self):
+        from items.iso_line import IsoLineItem
+        from items.math3d import rotate_3d, project_iso
+        from tools.pierce_select_tool import PierceSelectTool
+        
+        selected = self.canvas.scene.selectedItems()
+        if not selected or not isinstance(selected[0], IsoLineItem):
+            return
+            
+        item = selected[0]
+        
+        if getattr(item, 'pierce_peer', None):
+            self.canvas.tool_manager.set_tool(PierceSelectTool(self.canvas, item))
+            return
+            
+        original_length = item.length
+        half_length = max(1, original_length / 2)
+        
+        pos = item.pos()
+        rot_x, rot_y, rot_z = item.rot_x, item.rot_y, item.rot_z
+        
+        back_arrow = "none"
+        front_arrow = "none"
+        
+        if item.arrow_pos == "end":
+            front_arrow = "end"
+        elif item.arrow_pos == "start":
+            back_arrow = "start"
+        elif item.arrow_pos == "both":
+            back_arrow = "start"
+            front_arrow = "end"
+            
+        back_item = IsoLineItem(length=half_length, thickness=item.thickness, arrow_type=item.arrow_type, arrow_pos=back_arrow, base_color=item.base_color, opacity=item.opacity_val)
+        back_item.rot_x, back_item.rot_y, back_item.rot_z = rot_x, rot_y, rot_z
+        back_item.is_front_half = False
+        back_item.logical_center = QPointF(pos)
+        back_item.logical_length = original_length
+        back_item.update_geometry()
+        
+        front_item = IsoLineItem(length=half_length, thickness=item.thickness, arrow_type=item.arrow_type, arrow_pos=front_arrow, base_color=item.base_color, opacity=item.opacity_val)
+        front_item.rot_x, front_item.rot_y, front_item.rot_z = rot_x, rot_y, rot_z
+        front_item.is_front_half = True
+        front_item.logical_center = QPointF(pos)
+        front_item.logical_length = original_length
+        front_item.update_geometry()
+        
+        front_item.pierce_peer = back_item
+        back_item.pierce_peer = front_item
+        
+        rx_f, ry_f, rz_f = rotate_3d(original_length / 4, 0, 0, rot_x, rot_y, rot_z)
+        sx_f, sy_f = project_iso(rx_f, ry_f, rz_f)
+        
+        rx_b, ry_b, rz_b = rotate_3d(-original_length / 4, 0, 0, rot_x, rot_y, rot_z)
+        sx_b, sy_b = project_iso(rx_b, ry_b, rz_b)
+        
+        idx = self.canvas.block_list.index(item) if item in self.canvas.block_list else len(self.canvas.block_list)
+        
+        self.canvas.remove_block(item)
+        
+        self.canvas.scene.addItem(back_item)
+        back_item.setPos(pos.x() + sx_b, pos.y() + sy_b)
+        self.canvas.block_list.insert(idx, back_item)
+        
+        self.canvas.scene.addItem(front_item)
+        front_item.setPos(pos.x() + sx_f, pos.y() + sy_f)
+        self.canvas.block_list.insert(idx + 1, front_item)
+        
+        self.canvas.update_z_values()
+        
+        self.canvas.scene.clearSelection()
+        back_item.setSelected(True)
+        self.save_state()
+        
+        self.canvas.tool_manager.set_tool(PierceSelectTool(self.canvas, front_item))
+
     def duplicate_selected(self):
         selected = self.canvas.scene.selectedItems()
         if not selected:
@@ -479,13 +645,9 @@ class MainWindow(QMainWindow):
         self.canvas.scene.clearSelection()
 
         for item in selected:
-            if hasattr(item, 'w') and hasattr(item, 'd') and hasattr(item, 'h'):
-                new_item = __import__('items.iso_block', fromlist=['IsoBlockItem']).IsoBlockItem(w=item.w, d=item.d, h=item.h, base_color=item.base_color, opacity=item.opacity_val)
-            elif hasattr(item, 'length') and hasattr(item, 'thickness'):
-                new_item = __import__('items.iso_line', fromlist=['IsoLineItem']).IsoLineItem(length=item.length, thickness=item.thickness, arrow_type=item.arrow_type, arrow_pos=item.arrow_pos, base_color=item.base_color, opacity=item.opacity_val)
-                new_item.update_geometry(rot_x=item.rot_x, rot_y=item.rot_y, rot_z=item.rot_z)
-            else:
+            if not hasattr(item, 'clone'):
                 continue
+            new_item = item.clone()
 
             # Offset by one grid step in isometric space
             import math
@@ -697,10 +859,7 @@ class MainWindow(QMainWindow):
                 data.append(item.to_dict())
         return data
 
-    def load_scene(self, data):
-        self.canvas.scene.clear()
-        self.canvas.block_list.clear()
-
+    def _create_item_from_dict(self, item_data):
         from PyQt6.QtGui import QColor
         from PyQt6.QtCore import QPointF
         from items.iso_block import IsoBlockItem
@@ -708,45 +867,84 @@ class MainWindow(QMainWindow):
         from items.iso_shape import IsoShapeItem
         from items.iso_text import IsoTextItem
         from items.iso_polyline import IsoPolylineItem
+        from items.iso_group import IsoGroupItem
 
+        item_type = item_data.get('type')
+        item = None
+        if item_type == 'IsoBlockItem':
+            item = IsoBlockItem(block_type=item_data['block_type'], w=item_data['w'], d=item_data['d'], h=item_data['h'],
+                                base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+            item.rot_x = item_data.get('rot_x', 0)
+            item.rot_y = item_data.get('rot_y', 0)
+            item.rot_z = item_data.get('rot_z', 0)
+            item.update_geometry()
+        elif item_type == 'IsoLineItem':
+            item = IsoLineItem(length=item_data['length'], thickness=item_data['thickness'],
+                               arrow_type=item_data['arrow_type'], arrow_pos=item_data['arrow_pos'],
+                               base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+            item.rot_x = item_data.get('rot_x', 0)
+            item.rot_y = item_data.get('rot_y', 0)
+            item.rot_z = item_data.get('rot_z', 0)
+            if 'item_id' in item_data: item.item_id = item_data['item_id']
+            if 'pierce_peer_id' in item_data:
+                item._pierce_peer_id = item_data['pierce_peer_id']
+                item.is_front_half = item_data.get('is_front_half', False)
+                item.logical_length = item_data.get('logical_length', item.length)
+                lc = item_data.get('logical_center')
+                if lc: item.logical_center = QPointF(lc['x'], lc['y'])
+            item.update_geometry()
+        elif item_type == 'IsoShapeItem':
+            item = IsoShapeItem(shape_type=item_data['shape_type'], size=item_data['size'],
+                                base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+            item.rot_x = item_data.get('rot_x', 0)
+            item.rot_y = item_data.get('rot_y', 0)
+            item.rot_z = item_data.get('rot_z', 0)
+            item.update_geometry()
+        elif item_type == 'IsoTextItem':
+            item = IsoTextItem(text=item_data['text'], font_size=item_data['font_size'], plane=item_data['plane'],
+                               base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+        elif item_type == 'IsoPolylineItem':
+            pts = [QPointF(p['x'], p['y']) for p in item_data['points']]
+            item = IsoPolylineItem(points=pts, thickness=item_data['thickness'],
+                                   base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+        elif item_type == 'IsoGroupItem':
+            item = IsoGroupItem()
+            for child_data in item_data.get('children', []):
+                child_item = self._create_item_from_dict(child_data)
+                if child_item:
+                    item.addToGroup(child_item)
+                    child_item.setPos(child_data['pos']['x'], child_data['pos']['y'])
+                    child_item.setZValue(child_data.get('zValue', 0))
+
+        return item
+
+    def load_scene(self, data):
+        self.canvas.scene.clear()
+        self.canvas.block_list.clear()
         for item_data in data:
-            item_type = item_data.get('type')
-            item = None
-            if item_type == 'IsoBlockItem':
-                item = IsoBlockItem(block_type=item_data['block_type'], w=item_data['w'], d=item_data['d'], h=item_data['h'],
-                                    base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
-                item.rot_x = item_data.get('rot_x', 0)
-                item.rot_y = item_data.get('rot_y', 0)
-                item.rot_z = item_data.get('rot_z', 0)
-                item.update_geometry()
-            elif item_type == 'IsoLineItem':
-                item = IsoLineItem(length=item_data['length'], thickness=item_data['thickness'],
-                                   arrow_type=item_data['arrow_type'], arrow_pos=item_data['arrow_pos'],
-                                   base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
-                item.rot_x = item_data.get('rot_x', 0)
-                item.rot_y = item_data.get('rot_y', 0)
-                item.rot_z = item_data.get('rot_z', 0)
-                item.update_geometry()
-            elif item_type == 'IsoShapeItem':
-                item = IsoShapeItem(shape_type=item_data['shape_type'], size=item_data['size'],
-                                    base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
-                item.rot_x = item_data.get('rot_x', 0)
-                item.rot_y = item_data.get('rot_y', 0)
-                item.rot_z = item_data.get('rot_z', 0)
-                item.update_geometry()
-            elif item_type == 'IsoTextItem':
-                item = IsoTextItem(text=item_data['text'], font_size=item_data['font_size'], plane=item_data['plane'],
-                                   base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
-            elif item_type == 'IsoPolylineItem':
-                pts = [QPointF(p['x'], p['y']) for p in item_data['points']]
-                item = IsoPolylineItem(points=pts, thickness=item_data['thickness'],
-                                       base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
-
+            item = self._create_item_from_dict(item_data)
             if item:
                 self.canvas.scene.addItem(item)
                 item.setPos(item_data['pos']['x'], item_data['pos']['y'])
                 item.setZValue(item_data.get('zValue', 0))
                 self.canvas.block_list.append(item)
+
+        # Link pierce peers
+        from items.iso_line import IsoLineItem
+        from items.iso_group import IsoGroupItem
+        all_lines = []
+        def collect_lines(group_or_list):
+            for i in group_or_list:
+                if isinstance(i, IsoLineItem):
+                    all_lines.append(i)
+                elif isinstance(i, IsoGroupItem):
+                    collect_lines(i.childItems())
+        collect_lines(self.canvas.block_list)
+        id_to_item = {i.item_id: i for i in all_lines}
+        for line in all_lines:
+            if hasattr(line, '_pierce_peer_id') and line._pierce_peer_id in id_to_item:
+                line.pierce_peer = id_to_item[line._pierce_peer_id]
+                del line._pierce_peer_id
 
     def save_state(self):
         if self.is_undoing: return
@@ -794,3 +992,133 @@ class MainWindow(QMainWindow):
         super().keyReleaseEvent(event)
         if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
             self.save_state()
+
+    def group_items(self):
+        selected = self.canvas.scene.selectedItems()
+        if len(selected) < 2:
+            return
+
+        group = IsoGroupItem()
+        import math
+        cx = sum(item.pos().x() for item in selected) / len(selected)
+        cy = sum(item.pos().y() for item in selected) / len(selected)
+        group_pos = QPointF(cx, cy)
+        
+        self.canvas.scene.addItem(group)
+        group.setPos(group_pos)
+        
+        min_z_idx = len(self.canvas.block_list)
+        for item in selected:
+            if item in self.canvas.block_list:
+                min_z_idx = min(min_z_idx, self.canvas.block_list.index(item))
+                self.canvas.block_list.remove(item)
+            
+            local_pos = item.pos() - group_pos
+            group.addToGroup(item)
+            item.setPos(local_pos)
+
+        if min_z_idx <= len(self.canvas.block_list):
+            self.canvas.block_list.insert(min_z_idx, group)
+        else:
+            self.canvas.block_list.append(group)
+        
+        self.canvas.update_z_values()
+        self.canvas.scene.clearSelection()
+        group.setSelected(True)
+        self.save_state()
+
+    def ungroup_items(self):
+        selected = self.canvas.scene.selectedItems()
+        changed = False
+        for item in selected:
+            if isinstance(item, IsoGroupItem):
+                group = item
+                idx = self.canvas.block_list.index(group) if group in self.canvas.block_list else len(self.canvas.block_list)
+                if group in self.canvas.block_list:
+                    self.canvas.block_list.remove(group)
+                
+                children = list(group.childItems())
+                for child in children:
+                    scene_pos = child.scenePos()
+                    group.removeFromGroup(child)
+                    self.canvas.scene.addItem(child)
+                    child.setPos(scene_pos)
+                    self.canvas.block_list.insert(idx, child)
+                    idx += 1
+                    child.setSelected(True)
+                
+                self.canvas.scene.removeItem(group)
+                group.setSelected(False)
+                changed = True
+                
+        if changed:
+            self.canvas.update_z_values()
+            self.save_state()
+
+    def zoom_in(self):
+        self.canvas.scale(1.15, 1.15)
+
+    def zoom_out(self):
+        self.canvas.scale(1 / 1.15, 1 / 1.15)
+
+    def zoom_reset(self):
+        self.canvas.resetTransform()
+
+    def export_image(self):
+        filters = "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;PDF Files (*.pdf)"
+        fname, selected_filter = QFileDialog.getSaveFileName(self, 'エクスポート', '', filters)
+        if not fname:
+            return
+
+        # Calculate bounding rect of all items
+        rect = self.canvas.scene.itemsBoundingRect()
+        if rect.isEmpty():
+            rect = QRectF(0, 0, 800, 600)
+        else:
+            # Add some margin
+            margin = 20
+            rect.adjust(-margin, -margin, margin, margin)
+
+        is_png = fname.lower().endswith('.png') or 'PNG' in selected_filter
+        is_pdf = fname.lower().endswith('.pdf') or 'PDF' in selected_filter
+        
+        transparent = self.cb_transparent.isChecked() and is_png
+
+        # Clear selection handles so they don't appear in the image
+        self.canvas.scene.clearSelection() 
+
+        if is_pdf:
+            writer = QPdfWriter(fname)
+            writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+            
+            painter = QPainter(writer)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # For PDF, map the logical rect to the page layout
+            page_rect = writer.pageLayout().fullRectPixels(writer.resolution())
+            # Scale rect to fit page_rect while maintaining aspect ratio
+            scale = min(page_rect.width() / rect.width(), page_rect.height() / rect.height())
+            
+            painter.scale(scale, scale)
+            painter.translate(-rect.left(), -rect.top())
+            self.canvas.scene.render(painter, target=QRectF(rect), source=rect)
+            painter.end()
+        else:
+            width = max(1, int(rect.width()))
+            height = max(1, int(rect.height()))
+            # Limit maximum size to prevent memory errors
+            width = min(width, 8000)
+            height = min(height, 8000)
+
+            image = QImage(width, height, QImage.Format.Format_ARGB32)
+            if transparent:
+                image.fill(Qt.GlobalColor.transparent)
+            else:
+                image.fill(Qt.GlobalColor.white)
+
+            painter = QPainter(image)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.canvas.scene.render(painter, target=QRectF(0, 0, width, height), source=rect)
+            painter.end()
+
+            image.save(fname)

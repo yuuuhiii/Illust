@@ -89,6 +89,14 @@ class IsoLineItem(QGraphicsItemGroup):
         self.rot_y = 0.0
         self.rot_z = 0.0
 
+        import uuid
+        self.item_id = str(uuid.uuid4())
+        self.pierce_peer = None
+        self.is_front_half = False
+        self.logical_center = None
+        self.logical_length = self.length
+        self._is_syncing = False
+
         from PyQt6.QtWidgets import QGraphicsLineItem
 
         self.poly_items = []
@@ -221,8 +229,8 @@ class IsoLineItem(QGraphicsItemGroup):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
+            new_pos = value
             if self.SNAP_ENABLED:
-                new_pos = value
                 sx = new_pos.x()
                 sy = new_pos.y()
                 import math
@@ -233,7 +241,28 @@ class IsoLineItem(QGraphicsItemGroup):
                 iso_y = round(iso_y / self.GRID_SIZE) * self.GRID_SIZE
                 snap_sx = (iso_x - iso_y) * c
                 snap_sy = (iso_x + iso_y) * s
-                return QPointF(snap_sx, snap_sy)
+                new_pos = QPointF(snap_sx, snap_sy)
+
+            if self.pierce_peer and getattr(self, '_is_syncing', False) is False:
+                self._is_syncing = True
+                
+                # Calculate logical center from new_pos
+                rx, ry, rz = rotate_3d(self.logical_length / 4 * (1 if self.is_front_half else -1), 0, 0, self.rot_x, self.rot_y, self.rot_z)
+                sx, sy = project_iso(rx, ry, rz)
+                
+                center_x = new_pos.x() - sx
+                center_y = new_pos.y() - sy
+                self.logical_center = QPointF(center_x, center_y)
+                self.pierce_peer.logical_center = self.logical_center
+                
+                # Update peer's pos
+                rx_p, ry_p, rz_p = rotate_3d(self.logical_length / 4 * (1 if self.pierce_peer.is_front_half else -1), 0, 0, self.rot_x, self.rot_y, self.rot_z)
+                sx_p, sy_p = project_iso(rx_p, ry_p, rz_p)
+                
+                self.pierce_peer.setPos(center_x + sx_p, center_y + sy_p)
+                self._is_syncing = False
+
+            return new_pos
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self.update_geometry()
         return super().itemChange(change, value)
@@ -248,8 +277,9 @@ class IsoLineItem(QGraphicsItemGroup):
 
 
     def to_dict(self):
-        return {
+        d = {
             'type': 'IsoLineItem',
+            'item_id': self.item_id,
             'pos': {'x': self.pos().x(), 'y': self.pos().y()},
             'zValue': self.zValue(),
             'length': self.length, 'thickness': self.thickness,
@@ -258,3 +288,10 @@ class IsoLineItem(QGraphicsItemGroup):
             'opacity': self.opacity_val,
             'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
         }
+        if self.pierce_peer:
+            d['pierce_peer_id'] = self.pierce_peer.item_id
+            d['is_front_half'] = self.is_front_half
+            if self.logical_center:
+                d['logical_center'] = {'x': self.logical_center.x(), 'y': self.logical_center.y()}
+            d['logical_length'] = self.logical_length
+        return d

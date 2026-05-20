@@ -32,7 +32,7 @@ def compute_normal(face):
     if length == 0: return (0,0,1)
     return (nx/length, ny/length, nz/length)
 
-def generate_sphere(radius, segments_theta=16, segments_phi=8):
+def generate_sphere(radius, segments_theta=32, segments_phi=16):
     faces = []
     for i in range(segments_phi):
         phi1 = math.pi * i / segments_phi
@@ -61,7 +61,7 @@ def generate_sphere(radius, segments_theta=16, segments_phi=8):
             faces.append([(x1, y1, z1), (x4, y4, z4), (x3, y3, z3), (x2, y2, z2)])
     return faces
 
-def generate_cylinder_vertical(radius, height, segments=16):
+def generate_cylinder_vertical(radius, height, segments=32):
     faces = []
     # Bottom and top
     z0 = height / 2

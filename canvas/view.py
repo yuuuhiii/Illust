@@ -11,11 +11,19 @@ class CanvasView(QGraphicsView):
         self.scene.setSceneRect(0, 0, 1000, 800)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         
+        # ズーム時の基準点をマウスカーソルの位置に設定
+        from PyQt6.QtWidgets import QGraphicsView
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        
         # レイヤーの順序を管理する配列
         self.block_list = []
 
         self.tool_manager = ToolManager(self)
         self.tool_manager.set_tool(SelectTool(self))
+
+        # パン操作用の状態変数
+        self._is_panning = False
+        self._pan_start_pos = None
 
     def add_block(self, block, pos):
         self.scene.addItem(block)
@@ -54,13 +62,52 @@ class CanvasView(QGraphicsView):
             block.setZValue(i)
 
     def mousePressEvent(self, event):
+        from PyQt6.QtCore import Qt
+        if event.button() == Qt.MouseButton.MiddleButton:
+            self._is_panning = True
+            self._pan_start_pos = event.pos()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept()
+            return
+            
         self.tool_manager.mousePressEvent(event)
         super().mousePressEvent(event)
+
     def mouseMoveEvent(self, event):
+        if self._is_panning and self._pan_start_pos is not None:
+            delta = event.pos() - self._pan_start_pos
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
+            self._pan_start_pos = event.pos()
+            event.accept()
+            return
+            
         self.tool_manager.mouseMoveEvent(event)
         super().mouseMoveEvent(event)
+
     def mouseReleaseEvent(self, event):
+        from PyQt6.QtCore import Qt
+        if event.button() == Qt.MouseButton.MiddleButton and self._is_panning:
+            self._is_panning = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            event.accept()
+            return
+            
         self.tool_manager.mouseReleaseEvent(event)
         super().mouseReleaseEvent(event)
-        if hasattr(self.window(), 'save_state'):
-            self.window().save_state()
+        
+        # 中ボタンでのリリースでは save_state は呼ばない
+        if event.button() != Qt.MouseButton.MiddleButton:
+            if hasattr(self.window(), 'save_state'):
+                self.window().save_state()
+
+    def wheelEvent(self, event):
+        from PyQt6.QtCore import Qt
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            # マウスホイールによるズーム
+            if event.angleDelta().y() > 0:
+                self.scale(1.15, 1.15)
+            else:
+                self.scale(1 / 1.15, 1 / 1.15)
+        else:
+            super().wheelEvent(event)
