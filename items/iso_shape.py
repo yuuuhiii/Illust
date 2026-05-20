@@ -8,7 +8,7 @@ class IsoShapeItem(QGraphicsItemGroup):
     SNAP_ENABLED = True
     GRID_SIZE = 10
 
-    def __init__(self, shape_type="square", size=100, base_color=QColor(200, 200, 210), opacity=100):
+    def __init__(self, shape_type="square", size=100, base_color=QColor(200, 200, 210), opacity=100, custom_faces=None):
         super().__init__()
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable)
         self.setFlag(QGraphicsItemGroup.GraphicsItemFlag.ItemIsSelectable)
@@ -25,9 +25,14 @@ class IsoShapeItem(QGraphicsItemGroup):
         self.poly_item = QGraphicsPolygonItem()
         self.poly_item.setParentItem(self)
 
+        self.custom_faces = custom_faces
+
         self.update_geometry()
 
     def _generate_mesh(self):
+        if self.custom_faces is not None:
+            return self.custom_faces
+
         faces = []
         r = self.size / 2.0
 
@@ -133,7 +138,7 @@ class IsoShapeItem(QGraphicsItemGroup):
 
 
     def to_dict(self):
-        return {
+        d = {
             'type': 'IsoShapeItem',
             'pos': {'x': self.pos().x(), 'y': self.pos().y()},
             'zValue': self.zValue(),
@@ -142,3 +147,6 @@ class IsoShapeItem(QGraphicsItemGroup):
             'opacity': self.opacity_val,
             'rot_x': self.rot_x, 'rot_y': self.rot_y, 'rot_z': self.rot_z
         }
+        if self.custom_faces is not None:
+            d['custom_faces'] = self.custom_faces
+        return d

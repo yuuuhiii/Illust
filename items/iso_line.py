@@ -119,7 +119,7 @@ class IsoLineItem(QGraphicsItemGroup):
         faces = []
         if self.length <= 0: return faces
 
-        al = min(self.thickness * 3, self.length / 2 if self.arrow_pos == "both" else self.length)
+        al = min(self.thickness * 3, self.logical_length / 2 if self.arrow_pos == "both" else self.logical_length)
         draw_start = self.arrow_pos in ["start", "both"]
         draw_end = self.arrow_pos in ["end", "both"]
 
@@ -230,7 +230,8 @@ class IsoLineItem(QGraphicsItemGroup):
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             new_pos = value
-            if self.SNAP_ENABLED:
+            is_syncing = getattr(self, '_is_syncing', False)
+            if self.SNAP_ENABLED and not is_syncing:
                 sx = new_pos.x()
                 sy = new_pos.y()
                 import math
@@ -243,7 +244,7 @@ class IsoLineItem(QGraphicsItemGroup):
                 snap_sy = (iso_x + iso_y) * s
                 new_pos = QPointF(snap_sx, snap_sy)
 
-            if self.pierce_peer and getattr(self, '_is_syncing', False) is False:
+            if self.pierce_peer and not is_syncing:
                 self._is_syncing = True
                 
                 # Calculate logical center from new_pos

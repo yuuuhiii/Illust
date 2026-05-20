@@ -387,7 +387,8 @@ class MainWindow(QMainWindow):
         elif selected and isinstance(selected[0], IsoLineItem):
             self.prop_stack.setCurrentIndex(2)
             item = selected[0]
-            self.spin_length.blockSignals(True); self.spin_length.setValue(int(item.length)); self.spin_length.blockSignals(False)
+            display_length = getattr(item, 'logical_length', item.length) if getattr(item, 'pierce_peer', None) else item.length
+            self.spin_length.blockSignals(True); self.spin_length.setValue(int(display_length)); self.spin_length.blockSignals(False)
             self.spin_thickness.blockSignals(True); self.spin_thickness.setValue(int(item.thickness)); self.spin_thickness.blockSignals(False)
             self.spin_opacity.blockSignals(True); self.spin_opacity.setValue(item.opacity_val); self.spin_opacity.blockSignals(False)
             self.spin_rot_x.blockSignals(True); self.spin_rot_x.setValue(int(item.rot_x) % 360); self.spin_rot_x.blockSignals(False)
@@ -404,6 +405,11 @@ class MainWindow(QMainWindow):
 
             self.current_color = item.base_color
             self.update_color_btn_style()
+
+            if getattr(item, 'pierce_peer', None):
+                self.btn_split_line.setText("貫通対象を選択...")
+            else:
+                self.btn_split_line.setText("貫通用に分割 (前後)")
 
             if item in self.canvas.block_list:
                 self.label_z_index.setText(f"現在のレイヤー: {self.canvas.block_list.index(item)}")
@@ -894,8 +900,10 @@ class MainWindow(QMainWindow):
                 if lc: item.logical_center = QPointF(lc['x'], lc['y'])
             item.update_geometry()
         elif item_type == 'IsoShapeItem':
+            custom_faces = item_data.get('custom_faces')
             item = IsoShapeItem(shape_type=item_data['shape_type'], size=item_data['size'],
-                                base_color=QColor(item_data['base_color']), opacity=item_data['opacity'])
+                                base_color=QColor(item_data['base_color']), opacity=item_data['opacity'],
+                                custom_faces=custom_faces)
             item.rot_x = item_data.get('rot_x', 0)
             item.rot_y = item_data.get('rot_y', 0)
             item.rot_z = item_data.get('rot_z', 0)
@@ -991,6 +999,39 @@ class MainWindow(QMainWindow):
     def keyReleaseEvent(self, event):
         super().keyReleaseEvent(event)
         if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
+            self.save_state()
+
+    def explode_block(self):
+        selected = self.canvas.scene.selectedItems()
+        if not selected: return
+        from items.iso_block import IsoBlockItem
+        from items.iso_shape import IsoShapeItem
+        changed = False
+        for item in selected:
+            if isinstance(item, IsoBlockItem):
+                faces = item._generate_mesh()
+                base_pos = item.pos()
+                z_val = item.zValue()
+                idx = self.canvas.block_list.index(item) if item in self.canvas.block_list else len(self.canvas.block_list)
+                
+                if item in self.canvas.block_list:
+                    self.canvas.block_list.remove(item)
+                self.canvas.scene.removeItem(item)
+                
+                # Create a shape for each face
+                for i, face in enumerate(faces):
+                    shape = IsoShapeItem(shape_type="custom", base_color=item.base_color, opacity=item.opacity_val, custom_faces=[face])
+                    shape.rot_x = 0; shape.rot_y = 0; shape.rot_z = 0
+                    self.canvas.scene.addItem(shape)
+                    shape.setPos(base_pos)
+                    shape.setZValue(z_val + i * 0.01) # Slight offset to maintain visual order before user tweaks it
+                    self.canvas.block_list.insert(idx + i, shape)
+                
+                changed = True
+
+        if changed:
+            self.canvas.update_z_values()
+            self.canvas.scene.clearSelection()
             self.save_state()
 
     def group_items(self):
